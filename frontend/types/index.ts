@@ -193,3 +193,29 @@ export interface SubjectDetail extends Subject {
   units: UnitDetail[];
   progress?: SubjectProgress;
 }
+
+export interface StudyPlanItem {
+  date: string;
+  unit_id: string;
+  unit_title: string;
+  topic_id: string;
+  topic_name: string;
+  study_minutes: number;
+  material_mode: 'concise' | 'detailed';
+  material: string;
+  source_start?: string;
+  source_end?: string;
+  tasks: string[];
+}
+
+export interface StudyPlan {
+  subject_id: string;
+  subject_name: string;
+  start_date: string;
+  end_date: string;
+  days: number;
+  daily_hours: number;
+  total_hours: number;
+  material_mode: 'concise' | 'detailed';
+  schedule: StudyPlanItem[];
+}

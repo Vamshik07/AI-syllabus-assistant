@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database.database import engine, Base, SessionLocal
 from app.api.deps import get_current_user
-from app.api import subjects, units, documents, topics, quizzes, progress, media, auth
+from app.api import subjects, units, documents, topics, quizzes, progress, media, auth, study_plans
 
 # Configure logging
 logging.basicConfig(
@@ -64,4 +64,4 @@ app.include_router(topics.router, prefix="/api")
 app.include_router(quizzes.router, prefix="/api")
 app.include_router(progress.router, prefix="/api")
 app.include_router(media.router, prefix="/api")
-
+app.include_router(study_plans.router, prefix="/api")

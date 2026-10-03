@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, BarChart3, GraduationCap, CheckCircle2, LogIn, LogOut, UserPlus } from "lucide-react";
+import { BookOpen, BarChart3, GraduationCap, CheckCircle2, LogIn, LogOut, UserPlus, CalendarDays } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 export default function Navbar() {
@@ -14,6 +14,7 @@ export default function Navbar() {
     { name: "Dashboard", href: "/", icon: BookOpen },
     { name: "Subjects", href: "/subjects", icon: GraduationCap },
     { name: "Progress", href: "/progress", icon: BarChart3 },
+    { name: "Timetable", href: "/timetable", icon: CalendarDays },
   ];
 
   const handleLogout = () => {

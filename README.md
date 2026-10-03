@@ -72,6 +72,12 @@ SourceLearn enforces a strict architectural boundary:
 - **Real-Time Progress Tracking**:
   - Visual progress bars at Subject, Unit, and Topic levels reflecting completed topics, quiz scores, and mastery percentages.
 
+- **Time-Aware Study Timetable**:
+  - Choose a subject, preparation date range, and daily study hours from the Timetable page.
+  - The planner distributes the subject's ordered topics across the available days.
+  - Each topic includes source-grounded study material: concise main points when time is limited and more detailed material when more time is available.
+  - The generated plan also includes study tasks and topic source ranges without paraphrasing the uploaded material.
+
 ---
 
 ## 🏛️ System Architecture
