@@ -1,0 +1,106 @@
+# =======================================
+# SourceLearn .gitignore
+# =======================================
+
+# ---------------------------------------
+# Operating System & IDE Files
+# ---------------------------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# ---------------------------------------
+# Python & Backend Artifacts
+# ---------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Pytest & Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# ---------------------------------------
+# Local Databases & Uploaded Media
+# ---------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+backend/uploads/
+uploads/
+!backend/uploads/.gitkeep
+
+# ---------------------------------------
+# Node & Frontend (Next.js)
+# ---------------------------------------
+frontend/node_modules/
+node_modules/
+frontend/.next/
+.next/
+frontend/out/
+out/
+frontend/build/
+
+# Next.js bundle analysis
+.next/analyze/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ---------------------------------------
+# Environment Variables & Secrets
+# ---------------------------------------
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+backend/.env
+frontend/.env.local
