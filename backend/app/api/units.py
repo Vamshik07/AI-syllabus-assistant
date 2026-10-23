@@ -247,6 +247,7 @@ async def upload_unit_document(
 @router.post("/units/{unit_id}/master-quiz/generate", response_model=QuizResponse)
 def generate_master_quiz(
     unit_id: str,
+    regenerate: bool = Query(False),
     db: Session = Depends(get_db),
     user_id: Optional[str] = Query(None),
     authorization: Optional[str] = Header(None),
@@ -271,8 +272,9 @@ def generate_master_quiz(
                 detail="Master Quiz is locked. All topics in this unit must be passed first."
             )
 
-    quiz = quiz_service.get_or_generate_master_quiz(db, unit_id)
+    quiz = quiz_service.get_or_generate_master_quiz(db, unit_id, regenerate=regenerate)
     return quiz
+
 
 @router.post("/units/{unit_id}/master-quiz/attempt", response_model=QuizAttemptResponse)
 def attempt_master_quiz(

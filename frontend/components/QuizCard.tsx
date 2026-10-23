@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Quiz, QuizAttemptResponse } from "@/types";
 import { api } from "@/lib/api";
-import { CheckCircle2, XCircle, HelpCircle, ArrowRight, RotateCcw, Award } from "lucide-react";
+import { CheckCircle2, XCircle, HelpCircle, ArrowRight, RotateCcw, Award, BrainCircuit, Sparkles, BookOpen, AlertTriangle, Lightbulb } from "lucide-react";
+import { useCatCompanion } from "@/context/CatCompanionContext";
 
 interface QuizCardProps {
   quiz: Quiz;
@@ -12,6 +13,7 @@ interface QuizCardProps {
   initialResult?: QuizAttemptResponse | null;
   onSuccess: (result: QuizAttemptResponse) => void;
   onRetry: () => void;
+  onFreshQuestions?: () => Promise<void>;
 }
 
 export default function QuizCard({
@@ -20,12 +22,16 @@ export default function QuizCard({
   initialResult,
   onSuccess,
   onRetry,
+  onFreshQuestions,
 }: QuizCardProps) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
   const [result, setResult] = useState<QuizAttemptResponse | null>(initialResult || null);
   const [error, setError] = useState<string | null>(null);
+
+  const { setCatState, triggerSpeechBubble, openChat, setCompanionContext } = useCatCompanion();
 
   useEffect(() => {
     if (initialResult !== undefined) {
@@ -35,6 +41,13 @@ export default function QuizCard({
 
   const questions = quiz.questions || [];
   const currentQuestion = questions[currentIdx];
+
+  // Sync active question into companion context
+  useEffect(() => {
+    if (currentQuestion) {
+      setCompanionContext({ currentQuestion: currentQuestion.question });
+    }
+  }, [currentQuestion, setCompanionContext]);
 
   const handleSelectOption = (option: string) => {
     if (result) return; // Locked after submission
@@ -56,7 +69,12 @@ export default function QuizCard({
       const res = await api.submitQuizAttempt(quiz.id, selectedAnswers);
       setResult(res);
       if (res.passed) {
+        setCatState("SUCCESS");
+        triggerSpeechBubble("HUZZAH! Splendid victory! You passed this topic quest! 🎉⚔️", 8000, "SUCCESS");
         onSuccess(res);
+      } else {
+        setCatState("SUPPORTIVE");
+        triggerSpeechBubble("That's okay, brave scholar! Let's review the weak concepts and master it together! 🐾", 8000, "SUPPORTIVE");
       }
     } catch (err: any) {
       setError(err.message || "Failed to submit quiz attempt.");
@@ -70,6 +88,27 @@ export default function QuizCard({
     setResult(null);
     setCurrentIdx(0);
     onRetry();
+  };
+
+  const handleFreshQuestions = async () => {
+    setIsRegenerating(true);
+    setError(null);
+    try {
+      // First regenerate on the server
+      if (quiz.topic_id) {
+        await api.generateTopicQuiz(quiz.topic_id, true);
+      }
+      // Then let the parent re-fetch with the new quiz ID
+      if (onFreshQuestions) {
+        await onFreshQuestions();
+      } else {
+        handleReset();
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to generate fresh questions.");
+      setIsRegenerating(false);
+    }
+    // Note: isRegenerating will be cleared by the parent re-mount
   };
 
   if (!currentQuestion && !result) {
@@ -121,7 +160,7 @@ export default function QuizCard({
             ) : (
               <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-800 border border-red-200">
                 <XCircle className="h-3.5 w-3.5" />
-                <span>Minimum {result.passing_percentage}% score required. Review source material and retry!</span>
+                <span>Minimum {result.passing_percentage}% score required. Review weak concepts and retry!</span>
               </div>
             )}
           </div>
@@ -146,6 +185,68 @@ export default function QuizCard({
             </div>
           </div>
 
+          {/* Weak Concept Detection & Concept Mastery Breakdown */}
+          {result.concept_breakdown && Object.keys(result.concept_breakdown).length > 0 && (
+            <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/60 to-purple-50/40 p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <BrainCircuit className="h-5 w-5 text-indigo-600" />
+                <h4 className="font-bold text-gray-900 text-sm">Topic Concept Map & Mastery Breakdown</h4>
+              </div>
+              <p className="text-xs text-gray-600 mb-4">
+                Understanding is evaluated across the distinct learning elements of this topic.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {Object.entries(result.concept_breakdown).map(([area, stats]) => {
+                  const isMastered = stats.percentage >= 65.0;
+                  return (
+                    <div
+                      key={area}
+                      className={`rounded-xl border p-3 bg-white/90 shadow-2xs ${
+                        isMastered ? "border-emerald-200" : "border-amber-200"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-xs mb-1.5">
+                        <span className="font-semibold text-gray-800">{area}</span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                            isMastered
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {stats.percentage}% ({stats.correct}/{stats.total})
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className={`h-1.5 rounded-full transition-all ${
+                            isMastered ? "bg-emerald-500" : "bg-amber-500"
+                          }`}
+                          style={{ width: `${Math.max(5, stats.percentage)}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Targeted Revision Recommendations */}
+              {result.recommended_revision && result.recommended_revision.length > 0 && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/80 p-3.5 text-xs text-amber-900">
+                  <div className="flex items-center gap-2 font-bold mb-1.5">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                    <span>Recommended Revision for Weak Concepts</span>
+                  </div>
+                  <ul className="list-disc list-inside space-y-1 text-amber-800 pl-1">
+                    {result.recommended_revision.map((rec, i) => (
+                      <li key={i}>{rec}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Breakdown of questions */}
           <div className="flex flex-col gap-4">
             <h4 className="font-bold text-gray-900 text-sm">Detailed Question Review & Checked Answers</h4>
@@ -163,6 +264,24 @@ export default function QuizCard({
                     <XCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
                   )}
                   <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                      {r.concept_area && (
+                        <span className="rounded-md bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                          {r.concept_area}
+                        </span>
+                      )}
+                      {r.question_type && (
+                        <span className="rounded-md bg-gray-100 border border-gray-200 px-2 py-0.5 text-[10px] font-medium text-gray-700 capitalize">
+                          {r.question_type.replace('_', ' ')}
+                        </span>
+                      )}
+                      {r.difficulty && (
+                        <span className="rounded-md bg-purple-50 border border-purple-200 px-2 py-0.5 text-[10px] font-medium text-purple-700 capitalize">
+                          {r.difficulty}
+                        </span>
+                      )}
+                    </div>
+
                     <p className="font-bold text-gray-900 text-sm">
                       Question {idx + 1}: {r.question}
                     </p>
@@ -204,13 +323,26 @@ export default function QuizCard({
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-5">
-            <button
-              onClick={handleReset}
-              className="flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
-            >
-              <RotateCcw className="h-4 w-4" />
-              <span>Retry Quiz</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleReset}
+                className="flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+              >
+                <RotateCcw className="h-4 w-4" />
+                <span>Retry Quiz</span>
+              </button>
+
+              {quiz.topic_id && (
+                <button
+                  onClick={handleFreshQuestions}
+                  disabled={isRegenerating}
+                  className="flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs font-semibold text-indigo-700 shadow-2xs hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+                  <span>{isRegenerating ? "Generating..." : "Practice Fresh Questions"}</span>
+                </button>
+              )}
+            </div>
 
             {/* If PASSED, show Next Topic button */}
             {result.passed ? (
@@ -250,6 +382,7 @@ export default function QuizCard({
           </div>
         </div>
       ) : (
+
         /* Taking Quiz View */
         <div className="flex flex-col gap-6">
           {/* Header & Question Indicators */}
@@ -260,9 +393,23 @@ export default function QuizCard({
               </span>
               <h3 className="text-lg font-bold text-gray-900">{topicTitle}</h3>
             </div>
-            <span className="rounded-full bg-indigo-50 px-3 py-1 font-mono text-xs font-bold text-indigo-700">
-              Question {currentIdx + 1} of {questions.length}
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() =>
+                  openChat(
+                    `Can you give me a subtle hint for this question: "${currentQuestion.question}"?`
+                  )
+                }
+                title="Ask Sir Paws-a-Lot for a hint"
+                className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-3 py-1 text-xs font-bold text-amber-800 hover:bg-amber-100 transition-colors shadow-2xs"
+              >
+                <Lightbulb className="h-3.5 w-3.5 text-amber-600" />
+                <span>Ask Cat for Hint 💡</span>
+              </button>
+              <span className="rounded-full bg-indigo-50 px-3 py-1 font-mono text-xs font-bold text-indigo-700">
+                Question {currentIdx + 1} of {questions.length}
+              </span>
+            </div>
           </div>
 
           {/* Stepper bubbles */}

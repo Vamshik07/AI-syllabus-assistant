@@ -123,75 +123,271 @@ class AIService:
 
     def generate_topic_quiz_fallback(self, topic_name: str, source_text: str, num_questions: int = 5) -> List[Dict[str, Any]]:
         """
-        Deterministic, teacher-quality strictly source-grounded quiz generator fallback.
-        Creates meaningful conceptual, definitional, and structural questions directly from
-        the topic source content, without fill-in-the-blank masked single words.
+        Deterministic, pedagogical, strictly source-grounded quiz generator.
+        Transforms source concepts into natural educational questions testing deep understanding
+        across definitions, relationships, processes, comparisons, classifications, and scenarios
+        without robotic retrieval wording, fill-in-the-blank blanks, or external buzzwords.
         """
         # Split source into clean educational statements / sentences / list items
         raw_items = [
             s.strip() for s in re.split(r'(?:\r?\n+|(?<=[.!?])\s+)', source_text)
-            if len(s.strip()) > 20 and not s.strip().startswith("---") and not s.strip().startswith("HEADING:")
+            if len(s.strip()) > 15 and not s.strip().startswith("---") and not s.strip().startswith("HEADING:")
         ]
 
-        # Filter out purely markdown symbols
         statements = []
         for item in raw_items:
             clean = re.sub(r'[*#_`]', '', item).strip()
-            if len(clean) > 20 and clean not in statements:
+            if len(clean) > 15 and clean not in statements:
                 statements.append(clean)
 
         if not statements:
             statements = [
-                f"{topic_name} forms an integral conceptual foundation in the study curriculum.",
-                f"The core principles of {topic_name} dictate how organizational processes are managed.",
-                f"Key objectives and methodologies are established under {topic_name}.",
-                f"Effective implementation of {topic_name} ensures structured execution of tasks.",
-                f"Evaluation and continuous monitoring are vital elements of {topic_name}."
+                f"{topic_name} provides the structural framework for organizing core concepts.",
+                f"The foundational principles of {topic_name} guide systematic execution and control.",
+                f"Key components and methodologies are established to fulfill {topic_name} requirements.",
+                f"Effective application of {topic_name} connects organizational goals to tangible actions.",
+                f"Evaluation and feedback mechanisms maintain continuous alignment within {topic_name}."
             ]
 
-        # Question template stems designed like an academic instructor
-        question_stems = [
-            f"Based on the study material for '{topic_name}', which of the following statements is directly confirmed by the text?",
-            f"According to the source resource on '{topic_name}', what is explicitly established regarding this subject?",
-            f"In the context of '{topic_name}', which of the following represents an accurate principle from the source material?",
-            f"Regarding '{topic_name}', which key concept or detail is specifically documented in the curriculum content?",
-            f"Which of the following correctly reflects the source material's explanation of '{topic_name}'?"
+        # Extract conceptual entities and subject-predicate structures from source
+        parsed_concepts = []
+        for stmt in statements:
+            # Match common pedagogical patterns: "X is/are/involves/specifies/separates/manages/allows Y"
+            match = re.match(r'^([A-Z][a-zA-Z0-9\s\-/]{2,35}?)\s+(is defined as|is an?|are an?|is|are|involves|specifies|separates|manages|allows|enables|consists of|acts as|coordinates)\s+(.+)$', stmt, re.IGNORECASE)
+            if match:
+                concept_name = match.group(1).strip()
+                relation = match.group(2).strip().lower()
+                predicate = match.group(3).strip().rstrip('. ')
+                parsed_concepts.append({
+                    "concept": concept_name,
+                    "relation": relation,
+                    "predicate": predicate,
+                    "full_statement": stmt,
+                })
+            else:
+                words = stmt.split()
+                if len(words) >= 4:
+                    concept_guess = " ".join(words[:min(3, len(words))])
+                    pred_guess = " ".join(words[min(3, len(words)):])
+                    parsed_concepts.append({
+                        "concept": concept_guess,
+                        "relation": "relates to",
+                        "predicate": pred_guess,
+                        "full_statement": stmt,
+                    })
+
+        questions: List[Dict[str, Any]] = []
+        seen_question_texts = set()
+
+        # Templates across the educational taxonomy (Requirement 6)
+        question_templates = [
+            # 1. Definition / Meaning
+            {
+                "type": "definition",
+                "difficulty": "easy",
+                "area": "Core Definitions",
+                "format_q": lambda c, p, t: f"What is meant by {c} in the context of {t}?",
+                "format_ans": lambda c, p, t: f"It {p}." if not p.lower().startswith(("a ", "an ", "the ", "it ")) else p,
+                "distractors": lambda c, p, others, t: [
+                    f"It primarily restricts operational flow rather than {p[:35]}.",
+                    f"It focuses solely on external compliance without {p[:30]}.",
+                    f"It is an informal guideline superseded by automated controls."
+                ],
+            },
+            # 2. Meaning & Purpose
+            {
+                "type": "meaning",
+                "difficulty": "easy",
+                "area": "Purpose & Objectives",
+                "format_q": lambda c, p, t: f"What is the primary purpose or role of {c}?",
+                "format_ans": lambda c, p, t: f"To {p}." if not p.lower().startswith(("to ", "it ")) else f"{p}.",
+                "distractors": lambda c, p, others, t: [
+                    f"To separate administrative tasks without direct impact on {c}.",
+                    f"To serve as an optional secondary stage with no structural role.",
+                    f"To document historical logs without affecting current operations."
+                ],
+            },
+            # 3. Concept Understanding
+            {
+                "type": "concept_understanding",
+                "difficulty": "medium",
+                "area": "Conceptual Principles",
+                "format_q": lambda c, p, t: f"Which statement best explains how {c} functions within {t}?",
+                "format_ans": lambda c, p, t: f"{c} {p}." if not p.lower().startswith(c.lower()) else f"{p}.",
+                "distractors": lambda c, p, others, t: [
+                    f"{c} operates independently without coordinating system resources.",
+                    f"{c} replaces all underlying sub-processes with static configurations.",
+                    f"{c} functions only when primary architectural controls are disabled."
+                ],
+            },
+            # 4. Relationship & Interaction
+            {
+                "type": "relationship",
+                "difficulty": "medium",
+                "area": "System Relationships",
+                "format_q": lambda c, p, t: f"How does {c} relate to the broader principles of {t}?",
+                "format_ans": lambda c, p, t: f"It establishes the mechanism that {p}." if not p.lower().startswith("it ") else f"{p}.",
+                "distractors": lambda c, p, others, t: [
+                    f"It contradicts the standard methodology of {t}.",
+                    f"It functions in isolation, having no direct interaction with other components.",
+                    f"It provides temporary feedback only after the primary process has completed."
+                ],
+            },
+            # 5. Process & Mechanism
+            {
+                "type": "process",
+                "difficulty": "medium",
+                "area": "Operational Processes",
+                "format_q": lambda c, p, t: f"During the operation of {c}, how is execution structured?",
+                "format_ans": lambda c, p, t: f"Through processes that {p}." if not p.lower().startswith("through ") else f"{p}.",
+                "distractors": lambda c, p, others, t: [
+                    f"Through random iteration without predefined procedural steps.",
+                    f"By bypassing validation stages to prioritize execution speed.",
+                    f"Through manual intervention required at every operational step."
+                ],
+            },
+            # 6. Classification & Components
+            {
+                "type": "classification",
+                "difficulty": "medium",
+                "area": "Classifications & Structures",
+                "format_q": lambda c, p, t: f"Which of the following accurately characterizes the structure of {c}?",
+                "format_ans": lambda c, p, t: f"It is characterized by how it {p}." if not p.lower().startswith("it ") else f"{p}.",
+                "distractors": lambda c, p, others, t: [
+                    f"It is classified strictly as an unorganized collection of arbitrary rules.",
+                    f"It represents a deprecated model that has been completely phased out.",
+                    f"It consists solely of external monitoring without internal structure."
+                ],
+            },
+            # 7. Comparison & Distinction
+            {
+                "type": "comparison",
+                "difficulty": "hard",
+                "area": "Distinctions & Differences",
+                "format_q": lambda c, p, t: f"What key distinction defines the role of {c} in {t}?",
+                "format_ans": lambda c, p, t: f"The essential distinction is that it {p}." if not p.lower().startswith("the ") else f"{p}.",
+                "distractors": lambda c, p, others, t: [
+                    f"It is identical in function to secondary support utilities.",
+                    f"It eliminates the need for distinct operational boundaries.",
+                    f"It reverses the hierarchy by placing outcomes before fundamental principles."
+                ],
+            },
+            # 8. Scenario & Application
+            {
+                "type": "scenario",
+                "difficulty": "hard",
+                "area": "Practical Application",
+                "format_q": lambda c, p, t: f"An engineer or practitioner implementing {c} needs to align with its core principles. Which action directly matches the process?",
+                "format_ans": lambda c, p, t: f"Ensuring that the implementation {p}." if not p.lower().startswith("ensuring ") else f"{p}.",
+                "distractors": lambda c, p, others, t: [
+                    f"Disregarding {c} and applying arbitrary ad-hoc rules instead.",
+                    f"Focusing exclusively on output metrics while ignoring underlying mechanisms.",
+                    f"Postponing core configuration until after full system deployment."
+                ],
+            },
+            # 9. Cause & Effect / Importance
+            {
+                "type": "cause_effect",
+                "difficulty": "medium",
+                "area": "Functional Importance",
+                "format_q": lambda c, p, t: f"Why is {c} considered a critical element in {t}?",
+                "format_ans": lambda c, p, t: f"Because it ensures that {p}." if not p.lower().startswith("because ") else f"{p}.",
+                "distractors": lambda c, p, others, t: [
+                    f"Because it reduces overall system accountability.",
+                    f"Because it completely eliminates the need for ongoing evaluation.",
+                    f"Because it serves purely decorative or non-functional purposes."
+                ],
+            },
+            # 10. Sequence & Flow
+            {
+                "type": "sequence",
+                "difficulty": "hard",
+                "area": "Sequence & Flow",
+                "format_q": lambda c, p, t: f"Which sequence correctly describes the role of {c} in the operational flow?",
+                "format_ans": lambda c, p, t: f"It functions as a core component where it {p}." if not p.lower().startswith("it ") else f"{p}.",
+                "distractors": lambda c, p, others, t: [
+                    f"It occurs exclusively after the final results have already been produced.",
+                    f"It runs concurrently without maintaining any state or synchronization.",
+                    f"It is executed only when an unexpected failure occurs in the primary workflow."
+                ],
+            },
         ]
 
-        questions = []
-        for i in range(num_questions):
-            target_stmt = statements[i % len(statements)]
-            stem = question_stems[i % len(question_stems)]
+        total_needed = num_questions
+        concept_idx = 0
+        template_idx = 0
+        attempts = 0
+        max_attempts = max(200, total_needed * 15)
 
-            # Generate distinct, plausible distractors
-            other_stmts = [s for s in statements if s != target_stmt]
+        while len(questions) < total_needed and attempts < max_attempts:
+            attempts += 1
+            curr_item = parsed_concepts[concept_idx % len(parsed_concepts)]
+            curr_tmpl = question_templates[template_idx % len(question_templates)]
+            concept_idx += 1
+            template_idx += 1
+
+            c_name = curr_item["concept"]
+            c_pred = curr_item["predicate"]
+            full_stmt = curr_item["full_statement"]
+
+            # Generate question sentence
+            q_text = curr_tmpl["format_q"](c_name, c_pred, topic_name)
+            if q_text in seen_question_texts:
+                # Add variation if duplicate
+                variation_suffix = f" (Focus on {curr_tmpl['area']})" if attempts > len(parsed_concepts) * len(question_templates) else ""
+                if variation_suffix:
+                    q_text = curr_tmpl["format_q"](c_name, c_pred, topic_name).replace("?", f"{variation_suffix}?")
+                if q_text in seen_question_texts:
+                    continue
+
+            # Generate correct answer
+            correct_ans = curr_tmpl["format_ans"](c_name, c_pred, topic_name)
+            # Ensure correct answer is clean and ends with period if sentence-like
+            correct_ans = correct_ans.strip()
+
+            # Generate 3 in-domain distractors
+            other_statements = [s for s in statements if s != full_stmt]
             distractors = []
-            for j in range(3):
-                if j < len(other_stmts):
-                    distractors.append(other_stmts[j])
-                else:
-                    distractor_variants = [
-                        f"The source text does not consider this aspect as part of {topic_name}.",
-                        f"An alternative theoretical model not presented in the {topic_name} material.",
-                        f"A contradictory guideline that conflicts with the principles of {topic_name}.",
-                        f"A separate external procedure unrelated to {topic_name}."
-                    ]
-                    distractors.append(distractor_variants[j % len(distractor_variants)])
 
-            options = [target_stmt] + distractors[:3]
-            # Deterministically rotate options
-            shift = (i * 2 + 1) % len(options)
-            rotated_options = options[shift:] + options[:shift]
+            # 1. First try to use other statements from the same topic as plausible confusion distractors
+            if other_statements:
+                other_idx = (attempts + len(questions)) % len(other_statements)
+                other_stmt = other_statements[other_idx]
+                distractors.append(other_stmt)
 
+            # 2. Template-based conceptual misunderstanding distractors
+            tmpl_distractors = curr_tmpl["distractors"](c_name, c_pred, other_statements, topic_name)
+
+            for d in tmpl_distractors:
+                if len(distractors) < 3 and d not in distractors and d != correct_ans:
+                    distractors.append(d)
+
+            # Ensure we have 3 unique distractors
+            fallback_distractor_counter = 1
+            while len(distractors) < 3:
+                alt = f"It modifies secondary attributes without directly addressing the core {c_name} requirements (Variant {fallback_distractor_counter})."
+                if alt not in distractors and alt != correct_ans:
+                    distractors.append(alt)
+                fallback_distractor_counter += 1
+
+            options = [correct_ans] + distractors[:3]
+            # Deterministically shuffle options so correct answer is not always first
+            shift = (len(questions) * 3 + 1) % len(options)
+            shuffled_options = options[shift:] + options[:shift]
+
+            seen_question_texts.add(q_text)
             questions.append({
-                "question": stem,
-                "options": rotated_options,
-                "correct_answer": target_stmt,
-                "source_reference": target_stmt,
-                "explanation": f"Grounded directly in the authoritative source material: \"{target_stmt}\"",
+                "concept_area": curr_tmpl["area"],
+                "question_type": curr_tmpl["type"],
+                "difficulty": curr_tmpl["difficulty"],
+                "question": q_text,
+                "options": shuffled_options,
+                "correct_answer": correct_ans,
+                "source_reference": full_stmt,
+                "explanation": f"Based on the topic material: \"{full_stmt}\", which establishes the role and characteristics of {c_name}.",
             })
 
-        return questions
+        return questions[:total_needed]
 
 ai_service = AIService()
 

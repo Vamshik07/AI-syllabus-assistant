@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
 import { AuthProvider } from "@/context/AuthContext";
+import { CatCompanionProvider } from "@/context/CatCompanionContext";
+import StudyCatCompanion from "@/components/StudyCatCompanion";
 
 export const metadata: Metadata = {
   title: "AI Syllabus Assistant — Source-Grounded Learning Platform",
@@ -17,10 +19,13 @@ export default function RootLayout({
     <html lang="en">
       <body suppressHydrationWarning className="min-h-screen bg-slate-50 antialiased flex flex-col">
         <AuthProvider>
-          <Navbar />
-          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            {children}
-          </main>
+          <CatCompanionProvider>
+            <Navbar />
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+              {children}
+            </main>
+            <StudyCatCompanion />
+          </CatCompanionProvider>
         </AuthProvider>
       </body>
     </html>

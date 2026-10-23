@@ -181,7 +181,7 @@ class DocumentService:
                         TopicProgress.user_id == user.id,
                         TopicProgress.topic_id == t.id
                     ).first()
-                    init_status = "UNLOCKED" if idx == 0 else "LOCKED"
+                    init_status = "UNLOCKED"
                     if not t_prog:
                         t_prog = TopicProgress(
                             user_id=user.id,

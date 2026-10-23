@@ -20,6 +20,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+import { useCatCompanion } from "@/context/CatCompanionContext";
 
 export default function UnitDetailPage() {
   const params = useParams();
@@ -29,6 +30,8 @@ export default function UnitDetailPage() {
   const [unit, setUnit] = useState<UnitDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const { setCatState, triggerSpeechBubble, setCompanionContext } = useCatCompanion();
 
   // Edit / Delete Unit state
   const [showEditUnit, setShowEditUnit] = useState(false);
@@ -44,6 +47,14 @@ export default function UnitDetailPage() {
       setLoading(true);
       const data = await api.getUnit(unitId);
       setUnit(data);
+      setCompanionContext({
+        unitId: data.id,
+        unitTitle: data.title,
+        subjectId: data.subject_id,
+        pageType: "units",
+      });
+      setCatState("IDLE");
+      triggerSpeechBubble(`Unit: ${data.title}! Ready to dive into the topics? 🐱⚔️`, 6000);
     } catch (err: any) {
       setError(err.message || "Failed to load unit details.");
     } finally {
@@ -221,7 +232,7 @@ export default function UnitDetailPage() {
             <div>
               <h2 className="text-lg font-bold text-gray-900">Learning Pathway & Topics</h2>
               <p className="text-xs text-gray-500">
-                Topics are extracted from the source in original order. Pass each 5-question quiz (75% score) to unlock the next topic.
+                Topics are extracted from the source in original order. Access any topic at any time and take quizzes to test and track your mastery.
               </p>
             </div>
             {totalTopicsCount > 0 && (
@@ -239,8 +250,7 @@ export default function UnitDetailPage() {
             <div className="flex flex-col gap-3">
               {topics.map((topic, idx) => {
                 const isPassed = topic.progress_status === "PASSED" || topic.progress_status === "COMPLETED";
-                const isUnlocked = topic.is_unlocked;
-                const isCurrent = isUnlocked && !isPassed;
+                const isInProgress = topic.progress_status === "IN_PROGRESS";
 
                 return (
                   <div
@@ -248,9 +258,9 @@ export default function UnitDetailPage() {
                     className={`flex items-center justify-between rounded-2xl border p-4 sm:p-5 transition-all ${
                       isPassed
                         ? "border-emerald-200 bg-emerald-50/20"
-                        : isCurrent
+                        : isInProgress
                         ? "border-indigo-400 bg-indigo-50/20 shadow-sm ring-1 ring-indigo-400"
-                        : "border-gray-200 bg-gray-50/50 opacity-60"
+                        : "border-gray-200 bg-white hover:border-gray-300"
                     }`}
                   >
                     <div className="flex items-center gap-3.5">
@@ -258,17 +268,15 @@ export default function UnitDetailPage() {
                         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl font-bold text-xs ${
                           isPassed
                             ? "bg-emerald-100 text-emerald-700"
-                            : isCurrent
+                            : isInProgress
                             ? "bg-indigo-600 text-white"
-                            : "bg-gray-200 text-gray-500"
+                            : "bg-indigo-50 text-indigo-700 border border-indigo-100"
                         }`}
                       >
                         {isPassed ? (
                           <CheckCircle2 className="h-5 w-5" />
-                        ) : isCurrent ? (
-                          <span>{topic.order_index}</span>
                         ) : (
-                          <Lock className="h-4 w-4" />
+                          <span>{topic.order_index}</span>
                         )}
                       </div>
 
@@ -278,9 +286,9 @@ export default function UnitDetailPage() {
                             className={`font-bold text-sm ${
                               isPassed
                                 ? "text-emerald-950"
-                                : isCurrent
+                                : isInProgress
                                 ? "text-indigo-950"
-                                : "text-gray-600"
+                                : "text-gray-900"
                             }`}
                           >
                             {topic.name}
@@ -290,9 +298,9 @@ export default function UnitDetailPage() {
                               Passed
                             </span>
                           )}
-                          {isCurrent && (
+                          {isInProgress && (
                             <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700">
-                              Current
+                              In Progress
                             </span>
                           )}
                         </div>
@@ -306,24 +314,19 @@ export default function UnitDetailPage() {
                     </div>
 
                     <div>
-                      {isUnlocked ? (
-                        <Link
-                          href={`/topics/${topic.id}`}
-                          className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold shadow-sm transition-colors ${
-                            isCurrent
-                              ? "bg-indigo-600 text-white hover:bg-indigo-700"
-                              : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
-                          }`}
-                        >
-                          <span>{isPassed ? "Review Topic" : "Start Learning"}</span>
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </Link>
-                      ) : (
-                        <div className="flex items-center gap-1 text-xs text-gray-400 font-medium px-3 py-1.5">
-                          <Lock className="h-3.5 w-3.5" />
-                          <span>Locked</span>
-                        </div>
-                      )}
+                      <Link
+                        href={`/topics/${topic.id}`}
+                        className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold shadow-sm transition-all hover:scale-105 ${
+                          isInProgress
+                            ? "bg-indigo-600 text-white hover:bg-indigo-700"
+                            : isPassed
+                            ? "bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                            : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        <span>{isPassed ? "Review Topic" : isInProgress ? "Continue Learning" : "Start Learning"}</span>
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
                     </div>
                   </div>
                 );

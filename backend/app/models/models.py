@@ -8,6 +8,7 @@ from sqlalchemy import (
     Float,
     Boolean,
     DateTime,
+    Date,
     ForeignKey,
     UniqueConstraint,
     JSON,
@@ -179,6 +180,9 @@ class QuizQuestion(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     quiz_id = Column(String(36), ForeignKey("quizzes.id", ondelete="CASCADE"), nullable=False, index=True)
+    concept_area = Column(String(100), nullable=True, default="Core Concepts")
+    question_type = Column(String(50), nullable=True, default="concept_understanding")
+    difficulty = Column(String(20), nullable=True, default="medium")
     question = Column(Text, nullable=False)
     options = Column(JSON, nullable=False)  # List of strings [A, B, C, D]
     correct_answer = Column(Text, nullable=False)
@@ -201,10 +205,12 @@ class QuizAttempt(Base):
     percentage = Column(Float, nullable=False)
     passed = Column(Boolean, nullable=False)
     answers = Column(JSON, nullable=True)  # {question_id: selected_answer}
+    concept_breakdown = Column(JSON, nullable=True)  # {concept_area: {total, correct, percentage}}
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="quiz_attempts")
     quiz = relationship("Quiz", back_populates="attempts")
+
 
 
 class TopicProgress(Base):
@@ -213,7 +219,7 @@ class TopicProgress(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     topic_id = Column(String(36), ForeignKey("topics.id", ondelete="CASCADE"), nullable=False, index=True)
-    status = Column(String(50), nullable=False, default="LOCKED")  # LOCKED, UNLOCKED, IN_PROGRESS, PASSED, COMPLETED
+    status = Column(String(50), nullable=False, default="UNLOCKED")  # UNLOCKED, IN_PROGRESS, PASSED, COMPLETED
     best_score = Column(Integer, nullable=True)
     attempt_count = Column(Integer, nullable=False, default=0)
     completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -269,4 +275,35 @@ class SubjectProgress(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "subject_id", name="uq_user_subject"),
+    )
+
+
+class StudyRoadmap(Base):
+    __tablename__ = "study_roadmaps"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_id = Column(String(36), ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False, index=True)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    days = Column(Integer, nullable=False)
+    daily_hours = Column(Float, nullable=False)
+    total_available_hours = Column(Float, nullable=False)
+    total_scheduled_hours = Column(Float, nullable=False)
+    buffer_hours = Column(Float, nullable=False, default=0.0)
+    shortfall_hours = Column(Float, nullable=False, default=0.0)
+    has_shortfall = Column(Boolean, nullable=False, default=False)
+    shortfall_message = Column(Text, nullable=True)
+    topics_count = Column(Integer, nullable=False, default=0)
+    revision_hours = Column(Float, nullable=False, default=0.0)
+    assessment_hours = Column(Float, nullable=False, default=0.0)
+    plan_data = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+    user = relationship("User")
+    subject = relationship("Subject")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "subject_id", name="uq_user_subject_roadmap"),
     )

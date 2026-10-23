@@ -105,6 +105,10 @@ export interface TopicContentView {
   source_end?: string;
   subtopics: Subtopic[];
   regions: SourceRegion[];
+  unit_id?: string;
+  unit_title?: string;
+  subject_id?: string;
+  subject_name?: string;
 }
 
 export interface QuizQuestion {
@@ -114,6 +118,9 @@ export interface QuizQuestion {
   order_index: number;
   source_reference?: string;
   explanation?: string;
+  concept_area?: string;
+  question_type?: string;
+  difficulty?: string;
 }
 
 export interface Quiz {
@@ -134,6 +141,9 @@ export interface QuestionResult {
   is_correct: boolean;
   source_reference: string;
   explanation?: string;
+  concept_area?: string;
+  question_type?: string;
+  difficulty?: string;
 }
 
 export interface QuizAttemptResponse {
@@ -145,10 +155,14 @@ export interface QuizAttemptResponse {
   passed: boolean;
   passing_percentage: number;
   results: QuestionResult[];
+  concept_breakdown?: Record<string, { total: number; correct: number; percentage: number }>;
+  weak_concepts?: string[];
+  recommended_revision?: string[];
   unlocked_next_topic_id?: string;
   master_quiz_unlocked?: boolean;
   unit_completed?: boolean;
 }
+
 
 export interface TopicProgress {
   topic_id: string;
@@ -194,18 +208,69 @@ export interface SubjectDetail extends Subject {
   progress?: SubjectProgress;
 }
 
-export interface StudyPlanItem {
+export interface RoadmapDay {
+  day_number: number;
   date: string;
+  available_hours: number;
+  allocated_hours: number;
+  allocated_minutes: number;
+  remaining_minutes: number;
+  items: StudyPlanItem[];
+}
+
+export interface StudyPlanItem {
+  date?: string;
+  day_number?: number;
+  item_type?: 'NEW_TOPIC' | 'REVISION' | 'PRACTICE' | 'ASSESSMENT';
   unit_id: string;
   unit_title: string;
   topic_id: string;
   topic_name: string;
+  allocated_minutes?: number;
   study_minutes: number;
-  material_mode: 'concise' | 'detailed';
-  material: string;
+  material_mode?: 'concise' | 'detailed';
+  material?: string;
+  short_points?: string;
+  detailed_content?: string;
+  key_points?: string[];
+  priority?: 'HIGH' | 'MEDIUM' | 'LOWER' | 'high_weightage' | 'quick_win' | 'foundation';
+  priority_tier?: string;
+  rank?: number;
+  is_important?: boolean;
+  priority_label?: string;
+  importance_label?: string;
+  priority_reasons?: string[];
+  strategy_tip?: string;
   source_start?: string;
   source_end?: string;
+  source_reference?: string;
+  status?: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'NEEDS_REVISION';
+  best_score?: number | null;
   tasks: string[];
+}
+
+export interface TopicForPlan {
+  topic_id: string;
+  topic_name: string;
+  unit_id: string;
+  unit_title: string;
+  unit_order?: number;
+  order_index: number;
+  source_start?: string;
+  source_end?: string;
+  source_reference?: string;
+  workload_minutes?: number;
+  priority?: 'HIGH' | 'MEDIUM' | 'LOWER' | 'high_weightage' | 'quick_win' | 'foundation';
+  priority_tier?: string;
+  rank?: number;
+  is_important: boolean;
+  importance_score: number;
+  priority_label?: string;
+  importance_label: string;
+  strategy_tip?: string;
+  reasons?: string[];
+  status?: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'NEEDS_REVISION';
+  best_score?: number | null;
 }
 
 export interface StudyPlan {
@@ -215,7 +280,93 @@ export interface StudyPlan {
   end_date: string;
   days: number;
   daily_hours: number;
+  total_available_hours?: number;
+  total_scheduled_hours?: number;
   total_hours: number;
-  material_mode: 'concise' | 'detailed';
+  buffer_hours?: number;
+  has_shortfall?: boolean;
+  shortfall_hours?: number;
+  shortfall_message?: string | null;
+  topics_count?: number;
+  revision_hours?: number;
+  assessment_hours?: number;
+  minutes_per_topic?: number;
+  material_mode?: 'concise' | 'detailed';
+  material_preference?: string;
+  total_topics_in_syllabus?: number;
+  topics_scheduled?: number;
+  high_weightage_count?: number;
+  quick_win_count?: number;
+  only_important?: boolean;
+  daily_schedule?: RoadmapDay[];
   schedule: StudyPlanItem[];
+}
+
+// AI Study Cat Companion Types
+export type CatState =
+  | 'IDLE'
+  | 'HAPPY'
+  | 'THINKING'
+  | 'EXPLAINING'
+  | 'CURIOUS'
+  | 'STUDYING'
+  | 'QUIZ'
+  | 'HINT'
+  | 'SUCCESS'
+  | 'SUPPORTIVE'
+  | 'SLEEPY'
+  | 'CELEBRATION'
+  | 'ROADMAP'
+  | 'GENERAL_KNOWLEDGE'
+  | 'STUDY_MODE';
+
+export interface CompanionChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  mode: 'study' | 'general';
+  catState?: CatState;
+  sourceReference?: string | null;
+  requiresGeneralPrompt?: boolean;
+  outsideConcept?: string | null;
+  timestamp: string;
+  quickActions?: string[];
+}
+
+export interface CompanionChatRequest {
+  message: string;
+  mode: 'study' | 'general';
+  topic_id?: string | null;
+  topic_name?: string | null;
+  unit_id?: string | null;
+  unit_name?: string | null;
+  subject_id?: string | null;
+  subject_name?: string | null;
+  current_page?: string | null;
+  current_slide?: number | null;
+  current_resource_id?: string | null;
+  current_question?: string | null;
+  history?: Array<{ role: string; content: string }>;
+}
+
+export interface CompanionChatResponse {
+  response: string;
+  mode: 'study' | 'general';
+  cat_state: CatState;
+  speech_bubble?: string | null;
+  requires_general_prompt: boolean;
+  outside_concept?: string | null;
+  source_reference?: string | null;
+  quick_actions?: string[];
+}
+
+export interface CompanionContextData {
+  topicId?: string;
+  topicName?: string;
+  unitId?: string;
+  unitTitle?: string;
+  subjectId?: string;
+  subjectName?: string;
+  currentQuestion?: string;
+  pageType?: 'dashboard' | 'subjects' | 'units' | 'topic' | 'quiz' | 'timetable' | 'progress';
 }

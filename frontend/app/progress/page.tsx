@@ -18,12 +18,20 @@ import {
   LogIn,
   UserPlus,
 } from "lucide-react";
+import { useCatCompanion } from "@/context/CatCompanionContext";
 
 export default function ProgressDashboardPage() {
   const { isAuthenticated, loading: authLoading } = useAuth();
+  const { setCatState, triggerSpeechBubble, setCompanionContext } = useCatCompanion();
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [progressData, setProgressData] = useState<Record<string, SubjectProgress>>({});
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setCompanionContext({ pageType: "progress" });
+    setCatState("HAPPY");
+    triggerSpeechBubble("Look how much you've accomplished! Let's review your mastery! 🎉🐾", 6000, "HAPPY");
+  }, [setCompanionContext, setCatState, triggerSpeechBubble]);
 
   useEffect(() => {
     async function loadAllProgress() {

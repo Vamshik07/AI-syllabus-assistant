@@ -27,9 +27,40 @@ except Exception as e:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+def ensure_schema_compatibility(engine_instance):
+    """Adds missing columns dynamically to existing SQLite/PostgreSQL tables if needed."""
+    try:
+        from sqlalchemy import inspect, text
+        inspector = inspect(engine_instance)
+        table_names = inspector.get_table_names()
+
+        if "quiz_questions" in table_names:
+            cols = [col["name"] for col in inspector.get_columns("quiz_questions")]
+            with engine_instance.begin() as conn:
+                if "concept_area" not in cols:
+                    conn.execute(text("ALTER TABLE quiz_questions ADD COLUMN concept_area VARCHAR(100) DEFAULT 'Core Concepts'"))
+                if "question_type" not in cols:
+                    conn.execute(text("ALTER TABLE quiz_questions ADD COLUMN question_type VARCHAR(50) DEFAULT 'concept_understanding'"))
+                if "difficulty" not in cols:
+                    conn.execute(text("ALTER TABLE quiz_questions ADD COLUMN difficulty VARCHAR(20) DEFAULT 'medium'"))
+
+        if "quiz_attempts" in table_names:
+            cols = [col["name"] for col in inspector.get_columns("quiz_attempts")]
+            with engine_instance.begin() as conn:
+                if "concept_breakdown" not in cols:
+                    conn.execute(text("ALTER TABLE quiz_attempts ADD COLUMN concept_breakdown JSON"))
+    except Exception as e:
+        logger.warning(f"Schema compatibility check warning: {e}")
+
+try:
+    ensure_schema_compatibility(engine)
+except Exception:
+    pass
+
 def get_db():
     db: Session = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+

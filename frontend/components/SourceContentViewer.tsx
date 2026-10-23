@@ -130,53 +130,85 @@ export default function SourceContentViewer({ content }: SourceContentViewerProp
         ) : content.file_type === "PPTX" && slides.length > 0 ? (
           /* PPTX Original Slide View */
           <div className="flex flex-col gap-6">
-            {slides.map((slideRegion) => (
-              <div
-                key={slideRegion.id}
-                className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
-              >
-                <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/75 px-4 py-2.5 text-xs text-gray-600">
-                  <div className="flex items-center gap-2">
-                    <Layers className="h-4 w-4 text-indigo-600" />
-                    <span className="font-semibold text-gray-800">Original Slide {slideRegion.slide_number}</span>
-                  </div>
-                  <span className="text-[11px] font-mono text-gray-400">Authentic Slide Render</span>
-                </div>
+            {slides.map((slideRegion) => {
+              // Extract clean slide title
+              const rawTitle = slideRegion.source_reference?.includes(":")
+                ? slideRegion.source_reference.split(":").slice(1).join(":").trim()
+                : (slideRegion.source_reference || `Slide ${slideRegion.slide_number}`);
 
-                <div className="p-6">
-                  <h4 className="text-xl font-bold text-gray-900 border-b border-gray-100 pb-3 mb-4">
-                    {slideRegion.source_reference?.split(":")[1] || content.topic_name}
-                  </h4>
-                  <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap">
-                    {slideRegion.content_text}
+              const isGenericTitle = !rawTitle || rawTitle === "[No Title]" || rawTitle.toLowerCase().startsWith("slide ");
+              const displayTitle = isGenericTitle ? null : rawTitle;
+
+              // Clean text: strip any legacy OCR / Diagram Content dumps
+              let displayText = (slideRegion.content_text || "").trim();
+
+              // Remove any legacy "Diagram Content (...):" blocks
+              displayText = displayText.replace(/Diagram Content\s*(\([^)]*\))?:?[\s\S]*?(?=\n\n[A-Z]|\n---|$)/gi, "").trim();
+
+              // Strip redundant "Title: ..." prefix if present
+              if (displayTitle) {
+                const titlePrefixRegex = new RegExp(`^Title:\\s*${displayTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\n*`, 'i');
+                displayText = displayText.replace(titlePrefixRegex, '').trim();
+              }
+              displayText = displayText.replace(/^Title:\s*[^\n]*\n?/i, "").trim();
+
+              const slideImagesAndTables = visibleRegions.filter(
+                (r) => r.slide_number === slideRegion.slide_number && r.id !== slideRegion.id
+              );
+
+              return (
+                <div
+                  key={slideRegion.id}
+                  className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
+                >
+                  <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/75 px-4 py-2.5 text-xs text-gray-600">
+                    <div className="flex items-center gap-2">
+                      <Layers className="h-4 w-4 text-indigo-600" />
+                      <span className="font-semibold text-gray-800">Original Slide {slideRegion.slide_number}</span>
+                    </div>
+                    <span className="text-[11px] font-mono text-gray-400">Authentic Slide Render</span>
                   </div>
 
-                  {/* Render any associated images or tables on this slide */}
-                  <div className="mt-4 flex flex-col gap-4">
-                    {visibleRegions
-                      .filter((r) => r.slide_number === slideRegion.slide_number && r.id !== slideRegion.id)
-                      .map((subRegion) => (
-                        <div key={subRegion.id} className="mt-2">
-                          {subRegion.region_type === "IMAGE" && subRegion.media_path && (
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            <img
-                              src={`http://localhost:8000${subRegion.media_path}`}
-                              alt="Slide diagram"
-                              className="max-h-96 rounded-lg border border-gray-200 shadow-sm object-contain"
-                            />
-                          )}
-                          {subRegion.region_type === "TABLE" && subRegion.content_html && (
-                            <div
-                              className="overflow-x-auto rounded-lg border border-gray-200"
-                              dangerouslySetInnerHTML={{ __html: subRegion.content_html }}
-                            />
-                          )}
-                        </div>
-                      ))}
+                  <div className="p-6">
+                    {displayTitle && (
+                      <h4 className="text-xl font-bold text-gray-900 border-b border-gray-100 pb-3 mb-4">
+                        {displayTitle}
+                      </h4>
+                    )}
+
+                    {displayText ? (
+                      <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap mb-4">
+                        {displayText}
+                      </div>
+                    ) : null}
+
+                    {/* Render any associated authentic images or tables on this slide */}
+                    {slideImagesAndTables.length > 0 && (
+                      <div className="flex flex-col gap-4">
+                        {slideImagesAndTables.map((subRegion) => (
+                          <div key={subRegion.id} className="mt-2 flex flex-col items-center">
+                            {subRegion.region_type === "IMAGE" && subRegion.media_path && (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img
+                                src={`http://localhost:8000${subRegion.media_path}`}
+                                alt={`Slide ${slideRegion.slide_number} Diagram`}
+                                className="max-h-[520px] w-auto max-w-full rounded-xl border border-gray-200 shadow-sm object-contain bg-white"
+                              />
+                            )}
+                            {subRegion.region_type === "TABLE" && subRegion.content_html && (
+                              <div
+                                className="w-full overflow-x-auto rounded-lg border border-gray-200"
+                                dangerouslySetInnerHTML={{ __html: subRegion.content_html }}
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           /* DOCX & Structured Region View */

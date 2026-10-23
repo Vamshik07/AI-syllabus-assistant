@@ -52,12 +52,20 @@ class ProgressService:
 
         score = 0
         results = []
+        concept_stats: Dict[str, Dict[str, Any]] = {}
 
         for q in questions:
             selected = submitted_answers.get(q.id)
             is_correct = (selected == q.correct_answer)
             if is_correct:
                 score += 1
+
+            area = q.concept_area or "Core Concepts"
+            if area not in concept_stats:
+                concept_stats[area] = {"total": 0, "correct": 0, "percentage": 0.0}
+            concept_stats[area]["total"] += 1
+            if is_correct:
+                concept_stats[area]["correct"] += 1
 
             results.append({
                 "question_id": q.id,
@@ -68,10 +76,25 @@ class ProgressService:
                 "is_correct": is_correct,
                 "source_reference": q.source_reference,
                 "explanation": q.explanation,
+                "concept_area": area,
+                "question_type": q.question_type or "concept_understanding",
+                "difficulty": q.difficulty or "medium",
             })
 
         percentage = round((score / total_questions) * 100.0, 1)
         passed = (percentage >= quiz.passing_percentage)
+
+        # Detect weak concepts (< 65% score) and build targeted revision guidance
+        weak_concepts = []
+        recommended_revision = []
+        for area, stats in concept_stats.items():
+            area_pct = round((stats["correct"] / stats["total"]) * 100.0, 1)
+            stats["percentage"] = area_pct
+            if area_pct < 65.0:
+                weak_concepts.append(area)
+                recommended_revision.append(
+                    f"Review {area} ({stats['correct']}/{stats['total']} correct, {area_pct}%): Study the source slides/sections covering these principles before retaking the assessment."
+                )
 
         # Record attempt
         attempt = QuizAttempt(
@@ -82,6 +105,7 @@ class ProgressService:
             percentage=percentage,
             passed=passed,
             answers=submitted_answers,
+            concept_breakdown=concept_stats,
         )
         db.add(attempt)
         db.flush()
@@ -89,6 +113,8 @@ class ProgressService:
         unlocked_next_topic_id = None
         master_quiz_unlocked = False
         unit_completed = False
+
+        score_pct = int(round(percentage))
 
         if quiz.quiz_type == "TOPIC" and quiz.topic:
             topic = quiz.topic
@@ -103,15 +129,15 @@ class ProgressService:
                     user_id=user.id,
                     topic_id=topic.id,
                     status="PASSED" if passed else "IN_PROGRESS",
-                    best_score=score,
+                    best_score=score_pct,
                     attempt_count=1,
                     completed_at=datetime.now(timezone.utc) if passed else None,
                 )
                 db.add(t_prog)
             else:
                 t_prog.attempt_count += 1
-                if t_prog.best_score is None or score > t_prog.best_score:
-                    t_prog.best_score = score
+                if t_prog.best_score is None or score_pct > t_prog.best_score:
+                    t_prog.best_score = score_pct
                 if passed:
                     t_prog.status = "PASSED"
                     t_prog.completed_at = datetime.now(timezone.utc)
@@ -153,8 +179,8 @@ class ProgressService:
             ).first()
 
             if unit_prog:
-                if unit_prog.master_quiz_score is None or score > unit_prog.master_quiz_score:
-                    unit_prog.master_quiz_score = score
+                if unit_prog.master_quiz_score is None or score_pct > unit_prog.master_quiz_score:
+                    unit_prog.master_quiz_score = score_pct
                 if passed:
                     unit_prog.status = "COMPLETED"
                     unit_prog.completed_at = datetime.now(timezone.utc)
@@ -176,6 +202,9 @@ class ProgressService:
             "passed": passed,
             "passing_percentage": quiz.passing_percentage,
             "results": results,
+            "concept_breakdown": concept_stats,
+            "weak_concepts": weak_concepts,
+            "recommended_revision": recommended_revision,
             "unlocked_next_topic_id": unlocked_next_topic_id,
             "master_quiz_unlocked": master_quiz_unlocked,
             "unit_completed": unit_completed,
@@ -231,7 +260,11 @@ class ProgressService:
         return master_unlocked
 
     def _refresh_subject_progress(self, db: Session, user_id: str, subject_id: str):
-        """Calculates SubjectProgress derived from units."""
+        """
+        Calculates SubjectProgress derived from units using the 65% Mastery Rule.
+        A subject is ONLY marked 100% COMPLETED if all units have completed their
+        master assessment with >= 65%.
+        """
         subject = db.query(Subject).filter(Subject.id == subject_id).first()
         if not subject:
             return
@@ -259,20 +292,24 @@ class ProgressService:
                     completed_units += 1
                     has_any_progress = True
                 elif up.total_topics > 0:
-                    u_pct = (up.topics_completed / up.total_topics) * 100.0
-                    total_unit_percentages += u_pct
+                    topic_ratio = (up.topics_completed / up.total_topics)
+                    u_pct = topic_ratio * 80.0
+                    if up.master_quiz_score is not None:
+                        u_pct += (min(100.0, up.master_quiz_score) / 100.0) * 20.0
+                    total_unit_percentages += min(99.0, u_pct)
                     if up.topics_completed > 0:
                         has_any_progress = True
-                    if up.topics_completed == up.total_topics:
-                        completed_units += 1
 
         percentage = round(total_unit_percentages / max(1, total_units), 1)
-        if completed_units == total_units and percentage >= 100.0:
+        if completed_units == total_units and total_units > 0 and percentage >= 100.0:
             status = "COMPLETED"
+            percentage = 100.0
         elif has_any_progress or percentage > 0.0:
             status = "IN_PROGRESS"
+            percentage = min(99.0, percentage)
         else:
             status = "NOT_STARTED"
+            percentage = 0.0
 
         subj_prog = db.query(SubjectProgress).filter(
             SubjectProgress.user_id == user_id,
@@ -296,6 +333,7 @@ class ProgressService:
             subj_prog.status = status
 
     def get_latest_quiz_attempt(
+
         self,
         db: Session,
         quiz_id: str,
@@ -316,6 +354,30 @@ class ProgressService:
         questions = quiz.questions
         submitted_answers = attempt.answers or {}
         results = []
+        concept_stats = attempt.concept_breakdown or {}
+        if not concept_stats:
+            concept_stats = {}
+            for q in questions:
+                area = q.concept_area or "Core Concepts"
+                if area not in concept_stats:
+                    concept_stats[area] = {"total": 0, "correct": 0, "percentage": 0.0}
+                concept_stats[area]["total"] += 1
+                selected = submitted_answers.get(q.id)
+                if selected == q.correct_answer:
+                    concept_stats[area]["correct"] += 1
+            for area, stats in concept_stats.items():
+                stats["percentage"] = round((stats["correct"] / max(1, stats["total"])) * 100.0, 1)
+
+        weak_concepts = [
+            area for area, stats in concept_stats.items()
+            if stats.get("percentage", 0.0) < 65.0
+        ]
+        recommended_revision = [
+            f"Review {area} ({stats.get('correct', 0)}/{stats.get('total', 1)} correct): Study the source slides/sections covering these principles before retaking the assessment."
+            for area, stats in concept_stats.items()
+            if stats.get("percentage", 0.0) < 65.0
+        ]
+
         for q in questions:
             selected = submitted_answers.get(q.id)
             is_correct = (selected == q.correct_answer)
@@ -328,6 +390,9 @@ class ProgressService:
                 "is_correct": is_correct,
                 "source_reference": q.source_reference,
                 "explanation": q.explanation,
+                "concept_area": q.concept_area or "Core Concepts",
+                "question_type": q.question_type or "concept_understanding",
+                "difficulty": q.difficulty or "medium",
             })
 
         unlocked_next_topic_id = None
@@ -362,64 +427,37 @@ class ProgressService:
             "passed": attempt.passed,
             "passing_percentage": quiz.passing_percentage,
             "results": results,
+            "concept_breakdown": concept_stats,
+            "weak_concepts": weak_concepts,
+            "recommended_revision": recommended_revision,
             "unlocked_next_topic_id": unlocked_next_topic_id,
             "master_quiz_unlocked": master_quiz_unlocked,
             "unit_completed": unit_completed,
         }
 
+
     def check_and_resolve_topic_unlock(self, db: Session, topic: Topic, user_id: str) -> Tuple[bool, str]:
         """
-        Determines if a topic is unlocked for a user.
-        - If existing progress is UNLOCKED, IN_PROGRESS, PASSED, or COMPLETED -> returns True.
-        - If it's the very first topic in the document -> returns True (auto-creates UNLOCKED).
-        - If the immediately preceding topic is PASSED -> auto-unlocks this topic and returns True.
-        - Otherwise returns False, LOCKED.
+        Determines if a topic is accessible.
+        Topics have NO lock — all topics can be accessed by the user at any time.
+        Returns (True, status) where status is UNLOCKED, IN_PROGRESS, PASSED, or COMPLETED.
         """
         tp = db.query(TopicProgress).filter(
             TopicProgress.user_id == user_id,
             TopicProgress.topic_id == topic.id
         ).first()
 
-        if tp and tp.status in ["UNLOCKED", "IN_PROGRESS", "PASSED", "COMPLETED"]:
-            return True, tp.status
-
-        # Find preceding topics in document
-        preceding = db.query(Topic).filter(
-            Topic.document_id == topic.document_id,
-            Topic.order_index < topic.order_index
-        ).order_by(Topic.order_index.asc()).all()
-
-        if not preceding:
-            # First topic in document
-            if not tp:
-                tp = TopicProgress(user_id=user_id, topic_id=topic.id, status="UNLOCKED")
-                db.add(tp)
-                db.commit()
-            return True, "UNLOCKED"
-
-        # Check if the immediately preceding topic is PASSED
-        prev_topic = preceding[-1]
-        prev_tp = db.query(TopicProgress).filter(
-            TopicProgress.user_id == user_id,
-            TopicProgress.topic_id == prev_topic.id
-        ).first()
-
-        if prev_tp and prev_tp.status in ["PASSED", "COMPLETED"]:
-            if not tp:
-                tp = TopicProgress(
-                    user_id=user_id,
-                    topic_id=topic.id,
-                    status="UNLOCKED"
-                )
-                db.add(tp)
-                db.commit()
-            elif tp.status == "LOCKED":
+        if tp:
+            if tp.status == "LOCKED":
                 tp.status = "UNLOCKED"
                 db.commit()
-            return True, "UNLOCKED"
+            return True, tp.status
 
-        status = tp.status if tp else "LOCKED"
-        return False, status
+        # Create initial UNLOCKED progress record
+        tp = TopicProgress(user_id=user_id, topic_id=topic.id, status="UNLOCKED")
+        db.add(tp)
+        db.commit()
+        return True, "UNLOCKED"
 
 progress_service = ProgressService()
 

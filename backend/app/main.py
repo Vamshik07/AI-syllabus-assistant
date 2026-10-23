@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database.database import engine, Base, SessionLocal
 from app.api.deps import get_current_user
-from app.api import subjects, units, documents, topics, quizzes, progress, media, auth, study_plans
+from app.api import subjects, units, documents, topics, quizzes, progress, media, auth, study_plans, companion
 
 # Configure logging
 logging.basicConfig(
@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         user = get_current_user(db)
@@ -65,3 +66,4 @@ app.include_router(quizzes.router, prefix="/api")
 app.include_router(progress.router, prefix="/api")
 app.include_router(media.router, prefix="/api")
 app.include_router(study_plans.router, prefix="/api")
+app.include_router(companion.router, prefix="/api")

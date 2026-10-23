@@ -30,25 +30,20 @@ describe('SourceLearn Frontend Learning & Progression Logic', () => {
     assert.deepEqual(calcResult(0), { score: 0, total: 5, percentage: 0, passed: false });
   });
 
-  test('Sequential Topic Unlocking logic', () => {
+  test('Topic Accessibility logic (no locks, open access to all topics)', () => {
     const topics = [
       { id: 't1', order_index: 1, name: 'Topic 1', progress_status: 'PASSED' },
-      { id: 't2', order_index: 2, name: 'Topic 2', progress_status: 'UNLOCKED' },
-      { id: 't3', order_index: 3, name: 'Topic 3', progress_status: 'LOCKED' },
+      { id: 't2', order_index: 2, name: 'Topic 2', progress_status: 'IN_PROGRESS' },
+      { id: 't3', order_index: 3, name: 'Topic 3', progress_status: 'UNLOCKED' },
     ];
 
     const isTopicAccessible = (t) => {
-      return ['UNLOCKED', 'IN_PROGRESS', 'PASSED', 'COMPLETED'].includes(t.progress_status);
+      // User can access any topic at any time without locks
+      return true;
     };
 
     assert.equal(isTopicAccessible(topics[0]), true);
     assert.equal(isTopicAccessible(topics[1]), true);
-    assert.equal(isTopicAccessible(topics[2]), false);
-
-    // When topic 2 passes, unlock next topic in order
-    const nextTopicIndex = topics.findIndex(t => t.order_index === 2 + 1);
-    assert.equal(nextTopicIndex, 2);
-    topics[nextTopicIndex].progress_status = 'UNLOCKED';
     assert.equal(isTopicAccessible(topics[2]), true);
   });
 

@@ -72,11 +72,8 @@ def get_topic_content(
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found.")
 
-    # Check unlock status dynamically
+    # Ensure user progress record exists
     is_unlocked, status = progress_service.check_and_resolve_topic_unlock(db, topic, user.id)
-    if not is_unlocked:
-        # Don't show content for locked topics
-        raise HTTPException(status_code=403, detail="Topic is locked. Pass previous topic quizzes to unlock.")
 
     # Update status to IN_PROGRESS if UNLOCKED
     tp = db.query(TopicProgress).filter(
@@ -125,6 +122,11 @@ def get_topic_content(
         ) for r in regions
     ]
 
+    unit_id = topic.document.unit.id if (topic.document and topic.document.unit) else None
+    unit_title = topic.document.unit.title if (topic.document and topic.document.unit) else None
+    subject_id = topic.document.unit.subject.id if (topic.document and topic.document.unit and topic.document.unit.subject) else None
+    subject_name = topic.document.unit.subject.name if (topic.document and topic.document.unit and topic.document.unit.subject) else None
+
     return TopicContentView(
         topic_id=topic.id,
         topic_name=topic.name,
@@ -136,15 +138,21 @@ def get_topic_content(
         source_end=topic.source_end,
         subtopics=subtopics_res,
         regions=regions_res,
+        unit_id=unit_id,
+        unit_title=unit_title,
+        subject_id=subject_id,
+        subject_name=subject_name,
     )
 
 @router.post("/{topic_id}/quiz/generate", response_model=QuizResponse)
 def generate_topic_quiz(
     topic_id: str,
+    regenerate: bool = Query(False),
     db: Session = Depends(get_db),
 ):
-    quiz = quiz_service.get_or_generate_topic_quiz(db, topic_id)
+    quiz = quiz_service.get_or_generate_topic_quiz(db, topic_id, regenerate=regenerate)
     return quiz
+
 
 @router.get("/{topic_id}/quiz", response_model=QuizResponse)
 def get_topic_quiz(
@@ -171,7 +179,7 @@ def get_topic_progress(
         TopicProgress.topic_id == topic.id
     ).first()
 
-    status = tp.status if tp else ("UNLOCKED" if topic.order_index == 1 else "LOCKED")
+    status = tp.status if (tp and tp.status != "LOCKED") else "UNLOCKED"
     best_score = tp.best_score if tp else None
     attempt_count = tp.attempt_count if tp else 0
     completed_at = tp.completed_at if tp else None

@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   RotateCcw,
 } from "lucide-react";
+import { useCatCompanion } from "@/context/CatCompanionContext";
 
 export default function TopicLearningPage() {
   const params = useParams();
@@ -32,6 +33,8 @@ export default function TopicLearningPage() {
   const [loadingQuiz, setLoadingQuiz] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const { setCatState, triggerSpeechBubble, setCompanionContext } = useCatCompanion();
+
   const loadTopicAndContent = async () => {
     try {
       setLoading(true);
@@ -41,6 +44,17 @@ export default function TopicLearningPage() {
       ]);
       setTopic(tData);
       setContent(cData);
+      setCompanionContext({
+        topicId: tData.id,
+        topicName: tData.name,
+        unitId: cData.unit_id || undefined,
+        unitTitle: cData.unit_title || undefined,
+        subjectId: cData.subject_id || undefined,
+        subjectName: cData.subject_name || undefined,
+        pageType: "topic",
+      });
+      setCatState("STUDYING");
+      triggerSpeechBubble(`Studying ${tData.name}? Need an explanation or example? 🐱📚`, 7000, "STUDYING");
     } catch (err: any) {
       setError(err.message || "Failed to load topic content.");
     } finally {
@@ -56,22 +70,26 @@ export default function TopicLearningPage() {
 
   const handleStartQuiz = async () => {
     setActiveTab("quiz");
+    setLoadingQuiz(true);
+    setError(null);
+    setCatState("QUIZ");
+    triggerSpeechBubble("Focus, brave scholar! Tap me if you need a conceptual hint. ⚔️", 6000, "QUIZ");
     try {
-      let currentQuiz = quiz;
-      if (!currentQuiz) {
-        setLoadingQuiz(true);
-        currentQuiz = await api.getTopicQuiz(topicId);
-        setQuiz(currentQuiz);
-      }
-      // If no result is loaded yet, fetch the latest attempt if available
-      if (!quizResult && currentQuiz) {
+      // Always fetch current quiz from server to avoid stale ID after any regeneration
+      const currentQuiz = await api.getTopicQuiz(topicId);
+      setQuiz(currentQuiz);
+
+      // Fetch latest attempt if available
+      if (currentQuiz) {
         try {
           const latestAttempt = await api.getLatestQuizAttempt(currentQuiz.id);
           if (latestAttempt) {
             setQuizResult(latestAttempt);
+          } else {
+            setQuizResult(null);
           }
         } catch (e) {
-          // ignore if no attempt exists yet
+          setQuizResult(null);
         }
       }
     } catch (err: any) {
@@ -89,6 +107,21 @@ export default function TopicLearningPage() {
       setTopic(updatedTopic);
     } catch (err) {
       console.error("Failed to refresh topic status:", err);
+    }
+  };
+
+  const handleFreshQuestionsRequested = async () => {
+    // Called by QuizCard "Practice Fresh Questions" button.
+    // Re-fetches the newly regenerated quiz so the correct ID is used.
+    setLoadingQuiz(true);
+    setQuizResult(null);
+    try {
+      const freshQuiz = await api.getTopicQuiz(topicId);
+      setQuiz(freshQuiz);
+    } catch (err: any) {
+      console.error("Failed to reload fresh quiz:", err);
+    } finally {
+      setLoadingQuiz(false);
     }
   };
 
@@ -139,7 +172,7 @@ export default function TopicLearningPage() {
               {isPassed && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700 border border-emerald-200">
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  Quiz Passed (Unlocked)
+                  Quiz Passed
                 </span>
               )}
             </div>
@@ -150,7 +183,10 @@ export default function TopicLearningPage() {
 
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setActiveTab("content")}
+              onClick={() => {
+                setActiveTab("content");
+                setCatState("STUDYING");
+              }}
               className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
                 activeTab === "content"
                   ? "bg-indigo-600 text-white shadow-sm"
@@ -191,8 +227,8 @@ export default function TopicLearningPage() {
               </h4>
               <p className="text-xs text-indigo-700 mt-0.5">
                 {isPassed
-                  ? "You have already passed this topic. You can review your quiz results or advance to the next topic."
-                  : "Pass the 5-question assessment (minimum 75% score) to unlock the subsequent topic."}
+                  ? "You have already passed this topic. You can review your quiz results or practice again."
+                  : "Take the 5-question assessment to test and track your topic mastery."}
               </p>
             </div>
             <button
@@ -224,6 +260,7 @@ export default function TopicLearningPage() {
               onRetry={() => {
                 setQuizResult(null);
               }}
+              onFreshQuestions={handleFreshQuestionsRequested}
             />
           ) : null}
         </div>

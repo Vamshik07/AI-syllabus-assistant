@@ -85,3 +85,87 @@ def test_study_plan_rejects_subject_without_processed_topics(client, db_session)
     )
     assert response.status_code == 422
     assert "syllabus document" in response.json()["detail"]
+
+
+def test_study_plan_provides_both_short_points_and_detailed_content(client, db_session):
+    subject = _create_subject_with_topics(db_session)
+    start = date.today()
+
+    res = client.post(
+        f"/api/subjects/{subject.id}/study-plan",
+        json={
+            "start_date": start.isoformat(),
+            "end_date": start.isoformat(),
+            "daily_hours": 1,
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()
+    item = data["schedule"][0]
+    # Check that short points structure is present
+    assert "short_points" in item
+    assert "detailed_content" in item
+    assert "Core Concept" in item["short_points"]
+    assert "High-Yield Main Points" in item["short_points"]
+    # Check that detailed content has structured sections
+    assert "Topic Overview" in item["detailed_content"] or "Detailed Conceptual Breakdown" in item["detailed_content"]
+    assert "key definition" in item["detailed_content"]
+
+
+def test_study_plan_respects_user_material_preference(client, db_session):
+    subject = _create_subject_with_topics(db_session)
+    start = date.today()
+
+    # Even with ample time (10 days * 2 hrs), user can request concise short main points
+    concise_override = client.post(
+        f"/api/subjects/{subject.id}/study-plan",
+        json={
+            "start_date": start.isoformat(),
+            "end_date": (start + timedelta(days=9)).isoformat(),
+            "daily_hours": 2,
+            "material_preference": "concise",
+        },
+    )
+    assert concise_override.status_code == 200
+    assert concise_override.json()["material_mode"] == "concise"
+    assert "Core Concept" in concise_override.json()["schedule"][0]["material"]
+
+    # Even with short time, user can request detailed notes
+    detailed_override = client.post(
+        f"/api/subjects/{subject.id}/study-plan",
+        json={
+            "start_date": start.isoformat(),
+            "end_date": start.isoformat(),
+            "daily_hours": 0.5,
+            "material_preference": "detailed",
+        },
+    )
+    assert detailed_override.status_code == 200
+    assert detailed_override.json()["material_mode"] == "detailed"
+
+
+def test_study_plan_can_pick_selected_topics(client, db_session):
+    subject = _create_subject_with_topics(db_session)
+    # Get topics endpoint
+    topics_res = client.get(f"/api/subjects/{subject.id}/topics-for-plan")
+    assert topics_res.status_code == 200
+    topics_list = topics_res.json()
+    assert len(topics_list) == 2
+    assert "is_important" in topics_list[0]
+
+    # Plan only first topic
+    first_topic_id = topics_list[0]["topic_id"]
+    single_res = client.post(
+        f"/api/subjects/{subject.id}/study-plan",
+        json={
+            "start_date": date.today().isoformat(),
+            "end_date": date.today().isoformat(),
+            "daily_hours": 2,
+            "selected_topic_ids": [first_topic_id],
+        },
+    )
+    assert single_res.status_code == 200
+    assert single_res.json()["topics_scheduled"] == 1
+    assert single_res.json()["schedule"][0]["topic_id"] == first_topic_id
+
+

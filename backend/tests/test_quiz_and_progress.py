@@ -17,13 +17,13 @@ def test_quiz_75_percent_rule_and_unlocking(client, sample_pptx_bytes, db_sessio
     assert len(topics) == 3
     t1, t2, t3 = topics[0], topics[1], topics[2]
 
-    # Topic 1 is UNLOCKED; Topic 2 and 3 are LOCKED
+    # All topics are accessible anytime without locks
     assert t1["is_unlocked"] is True
-    assert t2["is_unlocked"] is False
-    assert t3["is_unlocked"] is False
+    assert t2["is_unlocked"] is True
+    assert t3["is_unlocked"] is True
 
-    # Attempting to view locked Topic 2 content returns 403
-    assert client.get(f"/api/topics/{t2['id']}/content").status_code == 403
+    # User can access Topic 2 content anytime
+    assert client.get(f"/api/topics/{t2['id']}/content").status_code == 200
 
     # Generate Topic 1 quiz
     q1 = client.post(f"/api/topics/{t1['id']}/quiz/generate").json()
@@ -63,9 +63,9 @@ def test_quiz_75_percent_rule_and_unlocking(client, sample_pptx_bytes, db_sessio
     assert attempt_fail["percentage"] == 60.0
     assert attempt_fail["passed"] is False
 
-    # Topic 2 MUST still be locked
+    # All topics remain accessible regardless of quiz attempt
     topics_after_fail = client.get(f"/api/units/{unit_id}/topics").json()
-    assert topics_after_fail[1]["is_unlocked"] is False
+    assert topics_after_fail[1]["is_unlocked"] is True
 
     # 2. Test PASS state: 4/5 = 80%
     answers_4_of_5 = {
@@ -82,12 +82,11 @@ def test_quiz_75_percent_rule_and_unlocking(client, sample_pptx_bytes, db_sessio
     assert attempt_pass_4["score"] == 4
     assert attempt_pass_4["percentage"] == 80.0
     assert attempt_pass_4["passed"] is True
-    assert attempt_pass_4["unlocked_next_topic_id"] == t2["id"]
 
-    # Now Topic 2 MUST be unlocked!
+    # Topics remain accessible
     topics_after_pass = client.get(f"/api/units/{unit_id}/topics").json()
     assert topics_after_pass[1]["is_unlocked"] is True
-    assert topics_after_pass[2]["is_unlocked"] is False
+    assert topics_after_pass[2]["is_unlocked"] is True
 
     # 3. Test Master quiz is currently locked because Topic 2 and 3 are not yet completed
     mq_attempt = client.post(f"/api/units/{unit_id}/master-quiz/generate")

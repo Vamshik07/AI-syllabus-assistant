@@ -100,25 +100,11 @@ class PPTXService:
                             f.write(image.blob)
                         
                         rel_img_path = f"/api/media/{document_id}/{img_filename}"
-                        
-                        # Extract diagram / educational content from the image
-                        from app.services.ai_service import ai_service
-                        img_data = ai_service.extract_image_content(img_path)
-                        img_heading = img_data.get("heading")
-                        img_content = img_data.get("content", "").strip()
-
-                        if not slide_title and img_heading:
-                            slide_title = img_heading
-
-                        img_text = img_content if img_content else f"[Image on Slide {slide_number}]"
-                        if img_content:
-                            slide_text_pieces.append(f"Diagram Content ({img_heading or 'Diagram'}):\n{img_content}")
 
                         elements.append({
                             "type": "IMAGE",
                             "media_path": rel_img_path,
-                            "text": img_text,
-                            "diagram_heading": img_heading,
+                            "text": "",
                             "x1": float(left),
                             "y1": float(top),
                             "x2": float(left + width),
@@ -128,13 +114,15 @@ class PPTXService:
                         logger.warning(f"Failed to extract PPTX image: {e}")
 
             if not slide_title:
-                # Check for first heading / bold paragraph
+                # Check for first heading / bold paragraph from authentic text
                 for el in elements:
                     if el.get("type") == "TEXT" and el.get("paragraphs"):
                         candidate = el["paragraphs"][0]["text"].strip()
                         if candidate and len(candidate) <= 60 and not candidate.startswith("---"):
                             slide_title = candidate
                             break
+                if not slide_title:
+                    slide_title = f"Slide {slide_number}"
 
             raw_slide_text = "\n".join(slide_text_pieces).strip()
             full_text.append(f"--- Slide {slide_number}: {slide_title} ---\n{raw_slide_text}")

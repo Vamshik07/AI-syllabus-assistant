@@ -18,6 +18,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+import { useCatCompanion } from "@/context/CatCompanionContext";
 
 export default function SubjectDetailPage() {
   const params = useParams();
@@ -27,6 +28,8 @@ export default function SubjectDetailPage() {
   const [subject, setSubject] = useState<SubjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const { setCatState, triggerSpeechBubble, setCompanionContext } = useCatCompanion();
 
   // Add unit state
   const [showAddUnit, setShowAddUnit] = useState(false);
@@ -59,6 +62,13 @@ export default function SubjectDetailPage() {
       setLoading(true);
       const data = await api.getSubject(subjectId);
       setSubject(data);
+      setCompanionContext({
+        subjectId: data.id,
+        subjectName: data.name,
+        pageType: "subjects",
+      });
+      setCatState("IDLE");
+      triggerSpeechBubble(`Exploring ${data.name}? Ask me anything or let's pick a unit to conquer! 🐱⚔️`, 6000);
     } catch (err: any) {
       setError(err.message || "Failed to load subject details.");
     } finally {

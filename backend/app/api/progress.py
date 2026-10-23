@@ -35,7 +35,7 @@ def get_unit_progress(
             TopicProgress.user_id == user.id,
             TopicProgress.topic_id == t.id
         ).first()
-        status = tp.status if tp else ("UNLOCKED" if t.order_index == 1 else "LOCKED")
+        status = tp.status if (tp and tp.status != "LOCKED") else "UNLOCKED"
         topic_progs.append(TopicProgressResponse(
             topic_id=t.id,
             topic_name=t.name,

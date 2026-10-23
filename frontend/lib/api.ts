@@ -14,6 +14,10 @@ import {
   SubjectProgress,
   TopicProgress,
   StudyPlan,
+  TopicForPlan,
+  CompanionChatRequest,
+  CompanionChatResponse,
+  CatState,
 } from '../types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
@@ -190,8 +194,8 @@ class ApiClient {
   }
 
   // Quizzes
-  async generateTopicQuiz(topicId: string): Promise<Quiz> {
-    return this.request<Quiz>(`/topics/${topicId}/quiz/generate`, {
+  async generateTopicQuiz(topicId: string, regenerate: boolean = false): Promise<Quiz> {
+    return this.request<Quiz>(`/topics/${topicId}/quiz/generate?regenerate=${regenerate}`, {
       method: 'POST',
     });
   }
@@ -212,11 +216,12 @@ class ApiClient {
   }
 
   // Master Quiz
-  async generateMasterQuiz(unitId: string): Promise<Quiz> {
-    return this.request<Quiz>(`/units/${unitId}/master-quiz/generate`, {
+  async generateMasterQuiz(unitId: string, regenerate: boolean = false): Promise<Quiz> {
+    return this.request<Quiz>(`/units/${unitId}/master-quiz/generate?regenerate=${regenerate}`, {
       method: 'POST',
     });
   }
+
 
   async submitMasterQuizAttempt(unitId: string, answers: Record<string, string>): Promise<QuizAttemptResponse> {
     return this.request<QuizAttemptResponse>(`/units/${unitId}/master-quiz/attempt`, {
@@ -234,15 +239,40 @@ class ApiClient {
     return this.request<SubjectProgress>(`/subjects/${subjectId}/progress`);
   }
 
+  async getTopicsForPlan(subjectId: string): Promise<TopicForPlan[]> {
+    return this.request<TopicForPlan[]>(`/subjects/${subjectId}/topics-for-plan`);
+  }
+
+  async getStudyPlan(subjectId: string): Promise<StudyPlan> {
+    return this.request<StudyPlan>(`/subjects/${subjectId}/study-plan`);
+  }
+
   async createStudyPlan(subjectId: string, data: {
     start_date: string;
     end_date: string;
     daily_hours: number;
+    material_preference?: string;
+    selected_topic_ids?: string[];
+    only_important?: boolean;
   }): Promise<StudyPlan> {
     return this.request<StudyPlan>(`/subjects/${subjectId}/study-plan`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  }
+
+  // AI Study Cat Companion
+  async chatWithCompanion(data: CompanionChatRequest): Promise<CompanionChatResponse> {
+    return this.request<CompanionChatResponse>('/companion/chat', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getCompanionBubble(pageType: string, topicName?: string): Promise<{ message: string; state: CatState }> {
+    const params = new URLSearchParams({ page_type: pageType });
+    if (topicName) params.append('topic_name', topicName);
+    return this.request<{ message: string; state: CatState }>(`/companion/bubble?${params.toString()}`);
   }
 }
 
