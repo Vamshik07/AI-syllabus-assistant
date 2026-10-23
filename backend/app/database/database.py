@@ -6,6 +6,14 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 db_url = settings.DATABASE_URL
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+elif db_url.startswith("postgresql://") and not db_url.startswith("postgresql+"):
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+if "channel_binding=" in db_url:
+    db_url = db_url.replace("&channel_binding=require", "").replace("?channel_binding=require&", "?").replace("?channel_binding=require", "")
+
 connect_args = {}
 if "sqlite" in db_url:
     connect_args["check_same_thread"] = False
@@ -14,6 +22,7 @@ try:
     engine = create_engine(
         db_url,
         pool_pre_ping=True,
+        pool_recycle=300,
         connect_args=connect_args,
     )
     # Test connection
