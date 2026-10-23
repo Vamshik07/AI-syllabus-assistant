@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { TopicContentView, SourceRegion } from "@/types";
 import { FileText, ShieldCheck, Image as ImageIcon, Table as TableIcon, Layers, Maximize2 } from "lucide-react";
+import { getMediaUrl } from "@/lib/utils";
 
 interface SourceContentViewerProps {
   content: TopicContentView;
@@ -107,7 +108,7 @@ export default function SourceContentViewer({ content }: SourceContentViewerProp
                   <div className="flex justify-center bg-gray-100/50 p-4">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={`http://localhost:8000${pageRegion.media_path}`}
+                      src={getMediaUrl(pageRegion.media_path)}
                       alt={`Page ${pageRegion.page_number}`}
                       className="max-w-full rounded-lg shadow-sm border border-gray-200 object-contain"
                     />
@@ -190,7 +191,7 @@ export default function SourceContentViewer({ content }: SourceContentViewerProp
                             {subRegion.region_type === "IMAGE" && subRegion.media_path && (
                               /* eslint-disable-next-line @next/next/no-img-element */
                               <img
-                                src={`http://localhost:8000${subRegion.media_path}`}
+                                src={getMediaUrl(subRegion.media_path)}
                                 alt={`Slide ${slideRegion.slide_number} Diagram`}
                                 className="max-h-[520px] w-auto max-w-full rounded-xl border border-gray-200 shadow-sm object-contain bg-white"
                               />
@@ -232,7 +233,7 @@ export default function SourceContentViewer({ content }: SourceContentViewerProp
                     <div key={region.id} className="my-4 flex flex-col items-center">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={`http://localhost:8000${region.media_path}`}
+                        src={getMediaUrl(region.media_path)}
                         alt="Source diagram"
                         className="max-h-96 rounded-lg border border-gray-200 shadow-sm object-contain"
                       />
