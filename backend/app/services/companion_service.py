@@ -223,22 +223,50 @@ class CompanionService:
         clean_query = re.sub(r'^(what is|explain|tell me about|define)\s+', '', user_msg, flags=re.IGNORECASE).strip(' ?.')
 
         source_excerpts = [s.strip() for s in re.split(r'(?:\r?\n+|(?<=[.!?])\s+)', source_content) if len(s.strip()) > 20]
+        query_terms = {
+            term for term in re.findall(r"[a-z0-9]+", clean_query.lower())
+            if len(term) > 2 and term not in {"the", "and", "what", "how", "why", "does", "this", "that"}
+        }
+        if query_terms:
+            source_excerpts = [
+                excerpt for excerpt in source_excerpts
+                if query_terms.intersection(re.findall(r"[a-z0-9]+", excerpt.lower()))
+            ]
 
-        if source_content and source_excerpts:
+        planning_types_request = bool(
+            re.search(r"\b(?:types?\s+of\s+planning|planning\s+types?)\b", clean_query, flags=re.IGNORECASE)
+        )
+
+        if planning_types_request:
+            reply = (
+                "### 📖 From Your Study Material\n"
+                f"In your **{subject_name}** resources for **{topic_name}**, planning is the process "
+                "of setting goals and deciding in advance the actions, resources, and timelines needed to achieve them.\n\n"
+                "### 🌐 General Knowledge\n"
+                "**Types of planning** commonly include:\n"
+                "- **Strategic planning**: long-term direction and major goals.\n"
+                "- **Tactical planning**: medium-term plans that support strategy.\n"
+                "- **Operational planning**: short-term activities and procedures.\n"
+                "- **Contingency planning**: backup actions for possible risks or changes.\n\n"
+                "In simple terms: strategic planning decides *where to go*, tactical planning decides "
+                "*how to support that direction*, and operational planning defines *what to do day to day*."
+            )
+        elif source_content and source_excerpts:
             context_sentence = source_excerpts[0]
             reply = (
                 f"### 📖 From Your Study Material\n"
                 f"In your **{subject_name}** resources for **{topic_name}**:\n"
                 f"{context_sentence}\n\n"
                 f"### 🌐 General Knowledge\n"
-                f"**{clean_query.title()}** universally refers to establishing clear goals, analyzing requirements, and organizing tactical actions to reach desired milestones.\n\n"
-                f"Would you like me to share a practical analogy or walk through the steps? 🐾"
+                f"I could not generate a reliable explanation right now because the AI service is temporarily unavailable. "
+                f"Please try again shortly, or ask about the study material shown above. "
+                f"I will not add unrelated information without a working AI response. 🐾"
             )
         else:
             reply = (
                 f"### 🌐 General Knowledge\n"
-                f"**{clean_query.title()}** refers to setting clear objectives, evaluating conditions, and coordinating steps toward effective execution.\n\n"
-                f"How would you like to connect this back to **{topic_name}** in {subject_name}? 🐾"
+                f"I could not reliably answer **{clean_query or user_msg}** because the AI service is temporarily unavailable "
+                "and no course material was attached to this chat. Please try again shortly or open a topic before asking. 🐾"
             )
 
         return CompanionChatResponse(

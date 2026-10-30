@@ -140,6 +140,7 @@ def get_unit(
     return {
         "id": unit.id,
         "subject_id": unit.subject_id,
+        "subject_name": unit.subject.name if unit.subject else None,
         "title": unit.title,
         "order_index": unit.order_index,
         "description": unit.description,

@@ -253,6 +253,7 @@ export interface SubjectProgress {
 }
 
 export interface UnitDetail extends Unit {
+  subject_name?: string;
   document?: DocumentInfo;
   topics: Topic[];
   progress?: UnitProgress;

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import {
   CatState,
   CompanionChatMessage,
@@ -36,6 +37,7 @@ interface CatCompanionContextType {
 const CatCompanionContext = createContext<CatCompanionContextType | undefined>(undefined);
 
 export function CatCompanionProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [catState, setCatStateInternal] = useState<CatState>("IDLE");
   const [mode, setMode] = useState<"study" | "general">("study");
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -64,13 +66,61 @@ export function CatCompanionProvider({ children }: { children: React.ReactNode }
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastInteractionTimeRef = useRef<number>(Date.now());
 
+  useEffect(() => {
+    const pageType = pathname.startsWith("/topics/")
+      ? "topic"
+      : pathname.startsWith("/units/")
+        ? "units"
+        : pathname.startsWith("/subjects/")
+          ? "subjects"
+          : pathname.startsWith("/progress")
+            ? "progress"
+            : pathname.startsWith("/timetable")
+              ? "timetable"
+              : "dashboard";
+
+    setCompanionContextState({ pageType });
+    setMessages([
+      {
+        id: "route-" + Date.now(),
+        role: "assistant",
+        content: "I’m ready to help with this course material. What would you like to understand? 🐱⚔️",
+        mode,
+        catState: "IDLE",
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        quickActions: ["Explain simply", "Give a real-life example", "Summarize key points"],
+      },
+    ]);
+  }, [pathname]);
+
   const setCatState = useCallback((state: CatState) => {
     setCatStateInternal(state);
   }, []);
 
   const setCompanionContext = useCallback((ctx: Partial<CompanionContextData>) => {
-    setCompanionContextState((prev) => ({ ...prev, ...ctx }));
-  }, []);
+    setCompanionContextState((prev) => {
+      const identityChanged =
+        (Object.prototype.hasOwnProperty.call(ctx, "subjectId") && ctx.subjectId !== prev.subjectId) ||
+        (Object.prototype.hasOwnProperty.call(ctx, "unitId") && ctx.unitId !== prev.unitId) ||
+        (Object.prototype.hasOwnProperty.call(ctx, "topicId") && ctx.topicId !== prev.topicId);
+
+      if (identityChanged) {
+        setMessages([
+          {
+            id: "context-" + Date.now(),
+            role: "assistant",
+            content: "I’m ready to help with this course material. What would you like to understand? 🐱⚔️",
+            mode,
+            catState: "IDLE",
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            quickActions: ["Explain simply", "Give a real-life example", "Summarize key points"],
+          },
+        ]);
+      }
+
+      return { ...prev, ...ctx };
+    });
+  }, [mode]);
 
   const triggerSpeechBubble = useCallback(
     (message: string, durationMs: number = 7000, state?: CatState) => {

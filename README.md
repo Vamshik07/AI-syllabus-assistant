@@ -1,5 +1,30 @@
 # 🎓 SourceLearn — Source-Grounded AI Learning Platform
 
+## ▶️ Run the Application
+
+Use **two PowerShell terminals** from the project root.
+
+### Terminal 1 — Backend
+
+```powershell
+Set-Location "C:\Users\VAMSHI\OneDrive\Desktop\AI Syllabus Assistant\backend"
+.\venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### Terminal 2 — Frontend
+
+```powershell
+Set-Location "C:\Users\VAMSHI\OneDrive\Desktop\AI Syllabus Assistant\frontend"
+npm run dev
+```
+
+Open the application at:
+
+- Frontend: http://localhost:3001
+- Backend health check: http://localhost:8000/health
+
+Alternatively, double-click `start-app.bat` from the project root to start both services.
+
 > **Learn from authentic course sources, never rewritten by AI.**  
 > SourceLearn is an educational learning platform built on **strict source fidelity**. It ingests authentic curriculum documents (PDF, PPTX, DOCX) and structures them into sequential topic pathways while ensuring that all educational content displayed to students comes **directly and un-paraphrased from the original source material**.
 

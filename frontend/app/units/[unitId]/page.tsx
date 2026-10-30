@@ -51,6 +51,10 @@ export default function UnitDetailPage() {
         unitId: data.id,
         unitTitle: data.title,
         subjectId: data.subject_id,
+        subjectName: data.subject_name,
+        topicId: undefined,
+        topicName: undefined,
+        currentQuestion: undefined,
         pageType: "units",
       });
       setCatState("IDLE");

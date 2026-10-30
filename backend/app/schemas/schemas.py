@@ -294,6 +294,7 @@ class SubjectProgressResponse(BaseModel):
 
 # Detail Responses
 class UnitDetailResponse(UnitResponse):
+    subject_name: Optional[str] = None
     document: Optional[DocumentResponse] = None
     topics: List[TopicResponse] = []
     progress: Optional[UnitProgressResponse] = None
