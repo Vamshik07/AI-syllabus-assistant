@@ -7,17 +7,33 @@ import { api } from "@/lib/api";
 import { Topic, TopicContentView, Quiz, QuizAttemptResponse } from "@/types";
 import SourceContentViewer from "@/components/SourceContentViewer";
 import QuizCard from "@/components/QuizCard";
+import TopicLearnView from "@/components/topic/TopicLearnView";
+import TopicVisualsGallery from "@/components/topic/TopicVisualsGallery";
+import TopicKeywordsView from "@/components/topic/TopicKeywordsView";
+import TopicPracticeCards from "@/components/topic/TopicPracticeCards";
+import TopicProgressView from "@/components/topic/TopicProgressView";
 import {
   ChevronLeft,
   BookOpen,
+  FileText,
+  Image as ImageIcon,
+  Tag,
   HelpCircle,
+  Layers,
+  BarChart2,
+  MessageSquare,
   CheckCircle2,
-  Lock,
-  ArrowRight,
-  ShieldCheck,
-  RotateCcw,
+  Award,
 } from "lucide-react";
 import { useCatCompanion } from "@/context/CatCompanionContext";
+
+type TabKey =
+  | "information"
+  | "keywords"
+  | "diagrams"
+  | "quiz"
+  | "practice"
+  | "progress";
 
 export default function TopicLearningPage() {
   const params = useParams();
@@ -28,12 +44,12 @@ export default function TopicLearningPage() {
   const [content, setContent] = useState<TopicContentView | null>(null);
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [quizResult, setQuizResult] = useState<QuizAttemptResponse | null>(null);
-  const [activeTab, setActiveTab] = useState<"content" | "quiz">("content");
+  const [activeTab, setActiveTab] = useState<TabKey>("information");
   const [loading, setLoading] = useState(true);
   const [loadingQuiz, setLoadingQuiz] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { setCatState, triggerSpeechBubble, setCompanionContext } = useCatCompanion();
+  const { setCatState, triggerSpeechBubble, setCompanionContext, openChat } = useCatCompanion();
 
   const loadTopicAndContent = async () => {
     try {
@@ -75,19 +91,13 @@ export default function TopicLearningPage() {
     setCatState("QUIZ");
     triggerSpeechBubble("Focus, brave scholar! Tap me if you need a conceptual hint. ⚔️", 6000, "QUIZ");
     try {
-      // Always fetch current quiz from server to avoid stale ID after any regeneration
       const currentQuiz = await api.getTopicQuiz(topicId);
       setQuiz(currentQuiz);
 
-      // Fetch latest attempt if available
       if (currentQuiz) {
         try {
           const latestAttempt = await api.getLatestQuizAttempt(currentQuiz.id);
-          if (latestAttempt) {
-            setQuizResult(latestAttempt);
-          } else {
-            setQuizResult(null);
-          }
+          setQuizResult(latestAttempt || null);
         } catch (e) {
           setQuizResult(null);
         }
@@ -100,7 +110,6 @@ export default function TopicLearningPage() {
   };
 
   const handleQuizSuccess = async (result: QuizAttemptResponse) => {
-    // Keep the result visible immediately! Do NOT show loading pulse which unmounts QuizCard!
     setQuizResult(result);
     try {
       const updatedTopic = await api.getTopic(topicId);
@@ -111,8 +120,6 @@ export default function TopicLearningPage() {
   };
 
   const handleFreshQuestionsRequested = async () => {
-    // Called by QuizCard "Practice Fresh Questions" button.
-    // Re-fetches the newly regenerated quiz so the correct ID is used.
     setLoadingQuiz(true);
     setQuizResult(null);
     try {
@@ -130,6 +137,7 @@ export default function TopicLearningPage() {
       <div className="flex flex-col gap-6 animate-pulse">
         <div className="h-6 w-32 bg-gray-200 rounded" />
         <div className="h-10 w-72 bg-gray-200 rounded-lg" />
+        <div className="h-12 w-full bg-gray-200 rounded-xl" />
         <div className="h-96 bg-gray-100 rounded-2xl border border-gray-200" />
       </div>
     );
@@ -150,10 +158,24 @@ export default function TopicLearningPage() {
   }
 
   const isPassed = topic.progress_status === "PASSED" || topic.progress_status === "COMPLETED";
+  const visualCount = content.learning_data?.visuals?.length || 0;
+  const keywordCount = content.learning_data?.keywords?.length || 0;
+  const pyqFrequency = content.pyq_frequency || topic.pyq_frequency || 0;
+
+  const tabs: Array<{ key: TabKey; label: string; icon: any; badge?: number | string }> = [
+    { key: "information", label: "Information", icon: BookOpen },
+    { key: "keywords", label: "Important Key Words", icon: Tag, badge: keywordCount > 0 ? keywordCount : undefined },
+    ...(visualCount > 0
+      ? [{ key: "diagrams" as TabKey, label: "Diagrams", icon: ImageIcon, badge: visualCount }]
+      : []),
+    { key: "quiz", label: "Quiz", icon: HelpCircle, badge: isPassed ? "✓" : undefined },
+    { key: "practice", label: "Practice", icon: Layers },
+    { key: "progress", label: "Progress", icon: BarChart2 },
+  ];
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Navigation & Header */}
+      {/* Header & Breadcrumb */}
       <div>
         <button
           onClick={() => router.back()}
@@ -165,7 +187,7 @@ export default function TopicLearningPage() {
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-700">
                 Topic {topic.order_index}
               </span>
@@ -175,96 +197,125 @@ export default function TopicLearningPage() {
                   Quiz Passed
                 </span>
               )}
+              {pyqFrequency > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-800 border border-amber-200">
+                  <Award className="h-3.5 w-3.5" />
+                  PYQ Frequent ({pyqFrequency}x)
+                </span>
+              )}
             </div>
-            <h1 className="mt-1 text-2xl sm:text-3xl font-extrabold text-gray-900">
+            <h1 className="mt-1.5 text-2xl sm:text-3xl font-extrabold text-gray-900">
               {topic.name}
             </h1>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                setActiveTab("content");
-                setCatState("STUDYING");
-              }}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
-                activeTab === "content"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <BookOpen className="h-4 w-4" />
-              <span>Source Learning Material</span>
-            </button>
-
-            <button
-              onClick={handleStartQuiz}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
-                activeTab === "quiz"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : isPassed
-                  ? "bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100"
-                  : "bg-amber-500 text-white shadow-sm hover:bg-amber-600 hover:scale-105"
-              }`}
-            >
-              <HelpCircle className="h-4 w-4" />
-              <span>{isPassed ? (quizResult ? "Quiz Results" : "Topic Quiz") : "Take Topic Quiz"}</span>
-            </button>
-          </div>
+          {/* Quick AI Mascot Trigger */}
+          <button
+            onClick={() => {
+              setCatState("EXPLAINING");
+              openChat(`Explain the key concepts of ${topic.name}`);
+            }}
+            className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition-all self-start sm:self-auto shadow-2xs"
+          >
+            <MessageSquare className="h-4 w-4 text-indigo-600" />
+            <span>Ask Sir Paws-a-Lot</span>
+          </button>
         </div>
       </div>
 
-      {/* Main View Area */}
-      {activeTab === "content" ? (
-        <div className="flex flex-col gap-6">
-          <SourceContentViewer content={content} />
-
-          {/* Bottom call to action for assessment */}
-          <div className="flex items-center justify-between rounded-2xl border border-indigo-200 bg-indigo-50/50 p-6">
-            <div>
-              <h4 className="font-bold text-indigo-950 text-sm">
-                {isPassed ? "Topic Assessment Passed!" : "Finished studying this topic?"}
-              </h4>
-              <p className="text-xs text-indigo-700 mt-0.5">
-                {isPassed
-                  ? "You have already passed this topic. You can review your quiz results or practice again."
-                  : "Take the 5-question assessment to test and track your topic mastery."}
-              </p>
-            </div>
+      {/* Modern Scrollable Tab Bar */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-gray-200 scrollbar-none">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.key;
+          return (
             <button
-              onClick={handleStartQuiz}
-              className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-indigo-700 transition-transform hover:scale-105"
-            >
-              <span>{isPassed ? "View Quiz Results" : "Take Topic Quiz"}</span>
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      ) : (
-        /* Quiz View */
-        <div>
-          {loadingQuiz ? (
-            <div className="flex flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white p-12 text-center">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent mb-3" />
-              <p className="font-semibold text-gray-800 text-sm">Preparing topic quiz...</p>
-              <p className="text-xs text-gray-500 mt-1">
-                Loading source-grounded questions and previous assessment results.
-              </p>
-            </div>
-          ) : quiz ? (
-            <QuizCard
-              quiz={quiz}
-              topicTitle={topic.name}
-              initialResult={quizResult}
-              onSuccess={handleQuizSuccess}
-              onRetry={() => {
-                setQuizResult(null);
+              key={tab.key}
+              onClick={() => {
+                if (tab.key === "quiz") {
+                  handleStartQuiz();
+                } else {
+                  setActiveTab(tab.key);
+                }
               }}
-              onFreshQuestions={handleFreshQuestionsRequested}
-            />
-          ) : null}
-        </div>
-      )}
+              className={`flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2 text-xs font-bold transition-all ${
+                isActive
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "bg-white text-gray-600 hover:bg-gray-100 hover:text-gray-900 border border-gray-100"
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              <span>{tab.label}</span>
+              {tab.badge !== undefined && (
+                <span
+                  className={`ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-extrabold ${
+                    isActive ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab Panels */}
+      <div>
+        {activeTab === "information" && (
+          <TopicLearnView
+            topic={topic}
+            content={content}
+            onSelectTab={(newTab: TabKey) => {
+              if (newTab === "quiz") {
+                handleStartQuiz();
+              } else {
+                setActiveTab(newTab);
+              }
+            }}
+          />
+        )}
+
+        {activeTab === "keywords" && <TopicKeywordsView topic={topic} content={content} />}
+
+        {activeTab === "diagrams" && <TopicVisualsGallery content={content} />}
+
+        {activeTab === "quiz" && (
+          <div>
+            {loadingQuiz ? (
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white p-12 text-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent mb-3" />
+                <p className="font-semibold text-gray-800 text-sm">Preparing topic quiz...</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Loading source-grounded questions and diagnostic feedback.
+                </p>
+              </div>
+            ) : quiz ? (
+              <QuizCard
+                quiz={quiz}
+                topicTitle={topic.name}
+                initialResult={quizResult}
+                onSuccess={handleQuizSuccess}
+                onRetry={() => {
+                  setQuizResult(null);
+                }}
+                onFreshQuestions={handleFreshQuestionsRequested}
+              />
+            ) : null}
+          </div>
+        )}
+
+        {activeTab === "practice" && <TopicPracticeCards topic={topic} content={content} />}
+
+        {activeTab === "progress" && (
+          <TopicProgressView
+            topic={topic}
+            latestAttempt={quizResult}
+            onRetakeQuiz={handleStartQuiz}
+            onReviewLearn={() => setActiveTab("information")}
+          />
+        )}
+      </div>
     </div>
   );
 }

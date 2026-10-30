@@ -37,6 +37,8 @@ class AuthTokenResponse(BaseModel):
 class SubjectBase(BaseModel):
     name: str
     description: Optional[str] = None
+    syllabus_text: Optional[str] = None
+    pyq_data: Optional[Dict[str, Any]] = None
 
 class SubjectCreate(SubjectBase):
     user_id: Optional[str] = None
@@ -44,6 +46,7 @@ class SubjectCreate(SubjectBase):
 class SubjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    syllabus_text: Optional[str] = None
 
 class SubjectResponse(SubjectBase):
     id: str
@@ -59,6 +62,7 @@ class UnitBase(BaseModel):
     title: str
     order_index: int = 1
     description: Optional[str] = None
+    syllabus_text: Optional[str] = None
 
 class UnitCreate(UnitBase):
     pass
@@ -67,6 +71,7 @@ class UnitUpdate(BaseModel):
     title: Optional[str] = None
     order_index: Optional[int] = None
     description: Optional[str] = None
+    syllabus_text: Optional[str] = None
 
 class UnitResponse(UnitBase):
     id: str
@@ -151,6 +156,9 @@ class TopicResponse(BaseModel):
     subtopics: List[SubtopicResponse] = []
     is_unlocked: bool = True
     progress_status: Optional[str] = "UNLOCKED"
+    learning_data: Optional[Dict[str, Any]] = None
+    pyq_frequency: int = 0
+    pyq_notes: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -169,6 +177,16 @@ class TopicContentView(BaseModel):
     unit_title: Optional[str] = None
     subject_id: Optional[str] = None
     subject_name: Optional[str] = None
+    learning_data: Optional[Dict[str, Any]] = None
+    pyq_frequency: int = 0
+    pyq_notes: Optional[str] = None
+
+class TopicLearningView(BaseModel):
+    topic_id: str
+    topic_name: str
+    order_index: int
+    learning_data: Dict[str, Any]
+    source_reference: Optional[str] = None
 
 
 # Quiz Schemas

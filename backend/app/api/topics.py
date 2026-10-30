@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from sqlalchemy.orm import Session
@@ -17,6 +18,31 @@ from app.services.progress_service import progress_service
 
 router = APIRouter(prefix="/topics", tags=["topics"])
 
+
+def _repair_generic_topic_name(db: Session, topic: Topic) -> None:
+    """Repair legacy topics that were named from a placeholder slide title."""
+    generic_subtopics = [
+        sub for sub in topic.subtopics
+        if re.fullmatch(r"slide(?:\s+\d+)?", sub.name.strip(), re.IGNORECASE)
+    ]
+    if generic_subtopics:
+        for sub in generic_subtopics:
+            db.delete(sub)
+        db.commit()
+
+    if not re.fullmatch(r"slide\s+\d+", topic.name.strip(), re.IGNORECASE):
+        return
+    first_region = db.query(SourceRegion).filter(
+        SourceRegion.topic_id == topic.id,
+        SourceRegion.region_type == "SLIDE",
+    ).order_by(SourceRegion.element_order).first()
+    if not first_region or not first_region.source_reference:
+        return
+    candidate = first_region.source_reference.split(":", 1)[-1].strip()
+    if candidate and not re.fullmatch(r"slide\s+\d+", candidate, re.IGNORECASE):
+        topic.name = candidate
+        db.commit()
+
 @router.get("/{topic_id}", response_model=TopicResponse)
 def get_topic(
     topic_id: str,
@@ -28,6 +54,7 @@ def get_topic(
     topic = db.query(Topic).filter(Topic.id == topic_id).first()
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found.")
+    _repair_generic_topic_name(db, topic)
 
     is_unlocked, status = progress_service.check_and_resolve_topic_unlock(db, topic, user.id)
 
@@ -54,6 +81,9 @@ def get_topic(
         ],
         "is_unlocked": is_unlocked,
         "progress_status": status,
+        "learning_data": topic.learning_data,
+        "pyq_frequency": topic.pyq_frequency or 0,
+        "pyq_notes": topic.pyq_notes,
     }
 
 @router.get("/{topic_id}/content", response_model=TopicContentView)
@@ -66,11 +96,13 @@ def get_topic_content(
     """
     Returns authentic original source content for the topic.
     Strictly preserves original page rendering, layout, tables, images, and text.
+    Also returns structured learning content (definitions, mind map, flowchart, keywords).
     """
     user = get_current_user(db, user_id, authorization)
     topic = db.query(Topic).filter(Topic.id == topic_id).first()
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found.")
+    _repair_generic_topic_name(db, topic)
 
     # Ensure user progress record exists
     is_unlocked, status = progress_service.check_and_resolve_topic_unlock(db, topic, user.id)
@@ -127,6 +159,10 @@ def get_topic_content(
     subject_id = topic.document.unit.subject.id if (topic.document and topic.document.unit and topic.document.unit.subject) else None
     subject_name = topic.document.unit.subject.name if (topic.document and topic.document.unit and topic.document.unit.subject) else None
 
+    # Load or generate structured learning data
+    from app.services.learning_service import learning_service
+    learning_data = learning_service.get_or_create_learning_data(db, topic)
+
     return TopicContentView(
         topic_id=topic.id,
         topic_name=topic.name,
@@ -142,7 +178,37 @@ def get_topic_content(
         unit_title=unit_title,
         subject_id=subject_id,
         subject_name=subject_name,
+        learning_data=learning_data,
+        pyq_frequency=topic.pyq_frequency or 0,
+        pyq_notes=topic.pyq_notes,
     )
+
+@router.get("/{topic_id}/learn")
+def get_topic_learn(
+    topic_id: str,
+    db: Session = Depends(get_db),
+    user_id: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None),
+):
+    """Returns structured educational breakdown, keywords, mind map, and flowchart."""
+    user = get_current_user(db, user_id, authorization)
+    topic = db.query(Topic).filter(Topic.id == topic_id).first()
+    if not topic:
+        raise HTTPException(status_code=404, detail="Topic not found.")
+
+    from app.services.learning_service import learning_service
+    learning_data = learning_service.get_or_create_learning_data(db, topic)
+    return {
+        "topic_id": topic.id,
+        "topic_name": topic.name,
+        "order_index": topic.order_index,
+        "source_start": topic.source_start,
+        "source_end": topic.source_end,
+        "learning_data": learning_data,
+        "pyq_frequency": topic.pyq_frequency or 0,
+        "pyq_notes": topic.pyq_notes,
+    }
+
 
 @router.post("/{topic_id}/quiz/generate", response_model=QuizResponse)
 def generate_topic_quiz(

@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 import logging
 from typing import Dict, Any, Tuple
@@ -11,6 +12,7 @@ from app.services.pptx_service import pptx_service
 from app.services.docx_service import docx_service
 from app.services.structure_service import structure_service
 from app.services.source_region_service import source_region_service
+from app.services.ai_service import ai_service
 
 logger = logging.getLogger(__name__)
 
@@ -107,10 +109,27 @@ class DocumentService:
             elif file_type == "DOCX":
                 parsed_doc = docx_service.extract_document(doc.file_path, doc.id)
 
+            if file_type == "PPTX":
+                self._enrich_image_only_slides(parsed_doc, doc.id)
+
             doc.extracted_text = parsed_doc.get("full_text", "")
 
+            # Check if syllabus is defined for this unit or subject
+            syllabus_topics = []
+            raw_syl = None
+            if doc.unit and doc.unit.syllabus_text:
+                raw_syl = doc.unit.syllabus_text
+            elif doc.unit and doc.unit.subject and doc.unit.subject.syllabus_text:
+                raw_syl = doc.unit.subject.syllabus_text
+
+            if raw_syl:
+                for line in raw_syl.splitlines():
+                    clean = line.strip().lstrip("•-*0123456789. ")
+                    if len(clean) > 3 and not clean.lower().startswith(("unit", "chapter", "module", "syllabus")):
+                        syllabus_topics.append(clean)
+
             # Structure detection
-            topics_data, status = structure_service.extract_structure(file_type, parsed_doc)
+            topics_data, status = structure_service.extract_structure(file_type, parsed_doc, syllabus_topics=syllabus_topics)
             if not topics_data:
                 doc.processing_status = "FAILED"
                 doc.processing_error = "Unable to extract structure from document."
@@ -154,6 +173,14 @@ class DocumentService:
 
             # Map source regions
             source_region_service.map_source_regions(db, doc, created_topics, parsed_doc)
+
+            # Populate initial structured learning data (definitions, mind map, flowchart)
+            try:
+                from app.services.learning_service import learning_service
+                for topic in created_topics:
+                    learning_service.get_or_create_learning_data(db, topic)
+            except Exception as e:
+                logger.warning(f"Error initializing learning_data for document {doc.id}: {e}")
 
             # Initialize UnitProgress & TopicProgress for all topics
             unit = doc.unit
@@ -203,5 +230,59 @@ class DocumentService:
             doc.processing_error = str(e)
             db.commit()
             return doc
+
+    def _enrich_image_only_slides(self, parsed_doc: Dict[str, Any], document_id: str) -> None:
+        """Extract text and headings from image-based slides so they have authentic text and headings."""
+        for slide in parsed_doc.get("slides", []):
+            native_text = (slide.get("text") or "").strip()
+            title = (slide.get("title") or "").strip()
+            is_image_only = not native_text or re.fullmatch(r"slide\s+\d+", title, re.IGNORECASE)
+            if not is_image_only:
+                continue
+
+            for element in slide.get("elements", []):
+                if element.get("type") != "IMAGE" or not element.get("media_path"):
+                    continue
+                filename = element["media_path"].rsplit("/", 1)[-1]
+                image_path = os.path.join(settings.EXTRACTED_MEDIA_DIR, document_id, filename)
+                analysis = ai_service.extract_image_content(image_path)
+                content = (analysis.get("content") or "").strip()
+                heading = (analysis.get("heading") or "").strip()
+
+                # Clean heading of leading non-alphanumeric noise or 1-3 char OCR logo artifacts
+                clean_h = re.sub(r'^[^\w\s]+', '', heading).strip()
+                clean_h = re.sub(r'^[a-zA-Z0-9]{1,3}\s+(?=[A-Z])', '', clean_h).strip()
+                if not clean_h:
+                    clean_h = heading
+
+                if content:
+                    clean_content = re.sub(
+                        r'^(?:HEADING:[^\n]*\n+|TITLE:[^\n]*\n+|TEXT:\s*|BODY:\s*|RELATIONSHIPS:[^\n]*\n*)',
+                        '',
+                        content,
+                        flags=re.MULTILINE | re.IGNORECASE,
+                    ).strip()
+                    element["visual_content"] = clean_content
+                    element["text"] = clean_content
+                    if not slide.get("text") or not slide["text"].strip():
+                        slide["text"] = clean_content
+
+                if (
+                    clean_h
+                    and clean_h.upper() != "NONE"
+                    and len(clean_h) >= 3
+                    and re.search(r"[A-Za-z]{3,}", clean_h)
+                ):
+                    slide["title"] = clean_h[:120]
+                    slide["visual_title"] = True
+                    slide["is_image_slide"] = True
+                    break
+
+        # Update full_text with enriched slide text
+        slide_texts = [
+            f"--- Slide {s.get('slide_number', idx+1)}: {s.get('title', '')} ---\n{s.get('text', '')}"
+            for idx, s in enumerate(parsed_doc.get("slides", []))
+        ]
+        parsed_doc["full_text"] = "\n\n".join(slide_texts)
 
 document_service = DocumentService()

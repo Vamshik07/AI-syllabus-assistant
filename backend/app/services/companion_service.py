@@ -25,15 +25,19 @@ PEDAGOGICAL & CONVERSATIONAL GUIDELINES:
    - NEVER start responses with robotic phrases such as "According to your uploaded resources...", "From your uploaded resources on...", "In the provided text...", or "Based on the source document...".
 2. COURSE CONTEXT AS A PRIMARY LENS:
    - When the student asks about a concept related to their course ({subject_name} → {topic_name}), answer with general conceptual clarity AND explain how it relates to what they are studying in their course.
-   - Example: If asked "What is planning?", explain the universal meaning clearly, and explain how their course ({subject_name}) defines it as a core management function.
-3. GENERAL KNOWLEDGE & UNLISTED TOPICS:
-   - If the student asks about something NOT in their uploaded slides (e.g., SWOT analysis, Six Sigma, Elon Musk, photosynthesis, or general definitions), ANSWER NATURALLY AND COMPLETELY using your general knowledge!
-   - NEVER say "I couldn't find this in your uploaded resources" or refuse to answer. You may naturally link the outside concept back to their topic if relevant (e.g., "While SWOT isn't detailed in this specific chapter, it is a classic framework that complements the planning frameworks you're studying...").
+3. DISTINGUISHING STUDY MATERIAL VS GENERAL KNOWLEDGE:
+   - When answering a question that involves both course concepts and outside concepts, or when you supplement the material with general knowledge or real-world extensions, clearly separate your answer with these exact markdown sections:
+   ### 📖 From Your Study Material
+   (Explain what is present or defined in their uploaded slides/notes)
+   ### 🌐 General Knowledge
+   (Provide the broader definition, general industry practice, or outside historical/technical context)
+   - If the student asks a pure general knowledge or dictionary question (e.g. "What does feasible mean?" or "Who invented the telephone?"), answer naturally and warmly under:
+   ### 🌐 General Knowledge
+   - NEVER falsely claim outside facts came from the student's study material!
 4. EXAMPLES, ANALOGIES & SIMPLIFICATIONS:
    - When the student asks "Give me an example", "Explain simply", "Explain like I'm a beginner", or "Why is this important?", create relatable real-world analogies and clear explanations. You do NOT need the example to exist in their PDF.
 5. CONTEXTUAL REASONING ("THIS", "WHY", PROCESSES, CONNECTIONS):
    - Resolve contextual pronouns like "What does this mean?", "Why does this happen?", "How are these two connected?" using the active question, current topic ({topic_name}), and conversation history.
-   - Explain connections between concepts (e.g., planning and decision-making) using logical reasoning even if the document doesn't explicitly link them.
 6. WORD MEANINGS:
    - When asked what a word means (e.g., "pervasive", "bounded rationality"), explain its general meaning first, then explain what it signifies in the context of their subject ({subject_name}).
 7. QUIZ HINTS:
@@ -218,16 +222,24 @@ class CompanionService:
         """Conversational fallback when the LLM is temporarily unreachable."""
         clean_query = re.sub(r'^(what is|explain|tell me about|define)\s+', '', user_msg, flags=re.IGNORECASE).strip(' ?.')
 
-        # Extract relevant lines if source exists
         source_excerpts = [s.strip() for s in re.split(r'(?:\r?\n+|(?<=[.!?])\s+)', source_content) if len(s.strip()) > 20]
-        context_sentence = source_excerpts[0] if source_excerpts else f"In your {subject_name} studies, {topic_name} focuses on establishing structured goals and converting them into actions."
 
-        reply = (
-            f"**{clean_query.title()}** is a foundational concept. "
-            f"At its core, it involves setting clear intentions, evaluating your environment, and deciding the best path forward to achieve desired outcomes.\n\n"
-            f"In the context of **{subject_name}** ({topic_name}), this is especially important because: {context_sentence}\n\n"
-            f"Would you like me to share a real-world example or break down the key steps? 🐾"
-        )
+        if source_content and source_excerpts:
+            context_sentence = source_excerpts[0]
+            reply = (
+                f"### 📖 From Your Study Material\n"
+                f"In your **{subject_name}** resources for **{topic_name}**:\n"
+                f"{context_sentence}\n\n"
+                f"### 🌐 General Knowledge\n"
+                f"**{clean_query.title()}** universally refers to establishing clear goals, analyzing requirements, and organizing tactical actions to reach desired milestones.\n\n"
+                f"Would you like me to share a practical analogy or walk through the steps? 🐾"
+            )
+        else:
+            reply = (
+                f"### 🌐 General Knowledge\n"
+                f"**{clean_query.title()}** refers to setting clear objectives, evaluating conditions, and coordinating steps toward effective execution.\n\n"
+                f"How would you like to connect this back to **{topic_name}** in {subject_name}? 🐾"
+            )
 
         return CompanionChatResponse(
             response=reply,

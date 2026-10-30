@@ -1,5 +1,7 @@
+import os
+import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Header
+from fastapi import APIRouter, Depends, HTTPException, Query, Header, UploadFile, File, Body, Form
 from sqlalchemy.orm import Session
 from app.database.database import get_db
 from app.models.models import Subject, User, SubjectProgress
@@ -8,9 +10,14 @@ from app.schemas.schemas import (
     SubjectUpdate,
     SubjectResponse,
     SubjectDetailResponse,
+    QuizResponse,
+    QuizAttemptRequest,
+    QuizAttemptResponse,
 )
 from app.api.deps import get_current_user
 from app.services.progress_service import progress_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/subjects", tags=["subjects"])
 
@@ -204,3 +211,143 @@ def delete_subject(
     db.delete(subject)
     db.commit()
     return {"message": "Subject deleted successfully."}
+
+@router.post("/{subject_id}/syllabus")
+async def upload_or_set_subject_syllabus(
+    subject_id: str,
+    db: Session = Depends(get_db),
+    syllabus_text: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+):
+    subject = db.query(Subject).filter(Subject.id == subject_id).first()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found.")
+
+    extracted_text = syllabus_text or ""
+    if file:
+        content = await file.read()
+        try:
+            filename = file.filename or ""
+            _, ext = os.path.splitext(filename.lower())
+            if ext == ".pdf":
+                import pymupdf as fitz
+                pdf = fitz.open(stream=content, filetype="pdf")
+                pages_t = [p.get_text() for p in pdf]
+                extracted_text = "\n".join(pages_t)
+                pdf.close()
+            elif ext in (".txt", ".md"):
+                extracted_text = content.decode("utf-8", errors="ignore")
+            elif ext == ".docx":
+                import docx
+                import io
+                d = docx.Document(io.BytesIO(content))
+                extracted_text = "\n".join([p.text for p in d.paragraphs])
+        except Exception as e:
+            logger.warning(f"Error reading uploaded syllabus file: {e}")
+
+    if not extracted_text.strip():
+        raise HTTPException(status_code=400, detail="No syllabus content provided.")
+
+    subject.syllabus_text = extracted_text.strip()
+    db.commit()
+    db.refresh(subject)
+    return {"message": "Syllabus saved successfully.", "syllabus_text": subject.syllabus_text}
+
+@router.post("/{subject_id}/pyq")
+async def upload_subject_pyq(
+    subject_id: str,
+    db: Session = Depends(get_db),
+    pyq_text: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+):
+    subject = db.query(Subject).filter(Subject.id == subject_id).first()
+    if not subject:
+        raise HTTPException(status_code=404, detail="Subject not found.")
+
+    from app.services.pyq_service import pyq_service
+    text_content = pyq_text or ""
+    filename = "Manual Entry"
+
+    if file:
+        filename = file.filename or "Uploaded PYQ"
+        content = await file.read()
+        try:
+            _, ext = os.path.splitext(filename.lower())
+            if ext == ".pdf":
+                import pymupdf as fitz
+                pdf = fitz.open(stream=content, filetype="pdf")
+                pages_t = [p.get_text() for p in pdf]
+                text_content = "\n".join(pages_t)
+                pdf.close()
+            elif ext in (".txt", ".md"):
+                text_content = content.decode("utf-8", errors="ignore")
+            elif ext == ".docx":
+                import docx
+                import io
+                d = docx.Document(io.BytesIO(content))
+                text_content = "\n".join([p.text for p in d.paragraphs])
+        except Exception as e:
+            logger.warning(f"Error reading uploaded PYQ file: {e}")
+
+    if not text_content.strip():
+        raise HTTPException(status_code=400, detail="No PYQ content provided.")
+
+    summary = pyq_service.analyze_pyq_text(db, subject, text_content, filename=filename)
+    return summary
+
+@router.post("/{subject_id}/final-assessment/generate", response_model=QuizResponse)
+def generate_final_assessment(
+    subject_id: str,
+    regenerate: bool = Query(False),
+    db: Session = Depends(get_db),
+    user_id: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None),
+):
+    user = get_current_user(db, user_id, authorization)
+    from app.services.quiz_service import quiz_service
+    quiz = quiz_service.generate_subject_assessment(db, subject_id, question_count=12, regenerate=regenerate)
+    return quiz
+
+@router.get("/{subject_id}/final-assessment", response_model=Optional[QuizResponse])
+def get_final_assessment(
+    subject_id: str,
+    db: Session = Depends(get_db),
+    user_id: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None),
+):
+    user = get_current_user(db, user_id, authorization)
+    subject = db.query(Subject).filter(Subject.id == subject_id).first()
+    if not subject or not subject.units:
+        return None
+    from app.models.models import Quiz
+    first_unit = subject.units[0]
+    quiz = db.query(Quiz).filter(
+        Quiz.unit_id == first_unit.id,
+        Quiz.quiz_type == "SUBJECT_ASSESSMENT"
+    ).first()
+    return quiz
+
+@router.post("/{subject_id}/final-assessment/submit", response_model=QuizAttemptResponse)
+def submit_final_assessment(
+    subject_id: str,
+    attempt_in: QuizAttemptRequest,
+    db: Session = Depends(get_db),
+    user_id: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None),
+):
+    user = get_current_user(db, user_id, authorization)
+    subject = db.query(Subject).filter(Subject.id == subject_id).first()
+    if not subject or not subject.units:
+        raise HTTPException(status_code=404, detail="Subject or units not found.")
+    from app.models.models import Quiz
+    first_unit = subject.units[0]
+    quiz = db.query(Quiz).filter(
+        Quiz.unit_id == first_unit.id,
+        Quiz.quiz_type == "SUBJECT_ASSESSMENT"
+    ).first()
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Final assessment not found. Please generate it first.")
+
+    res = progress_service.submit_quiz_attempt(db, quiz.id, user.id, attempt_in.answers)
+    return res
+

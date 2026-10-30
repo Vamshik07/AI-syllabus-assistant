@@ -43,8 +43,22 @@ class DOCXService:
 
             if tag == "p":
                 # Paragraph
-                p = docx.text.paragraph.Paragraph(block, doc)
-                p_text = p.text.strip()
+                # Check for inline images in paragraph
+                try:
+                    embeds = p._element.xpath('.//a:blip/@r:embed')
+                    for embed in embeds:
+                        if embed in image_map:
+                            elements.append({
+                                "element_order": element_idx,
+                                "type": "IMAGE",
+                                "media_path": image_map[embed],
+                                "style": "Image",
+                                "text": "[Image/Diagram]",
+                            })
+                            element_idx += 1
+                except Exception:
+                    pass
+
                 if not p_text:
                     continue
                 

@@ -75,10 +75,16 @@ class AIService:
                     jpeg_bytes = buf.getvalue()
 
                 prompt = (
-                    "You are an expert educational content analyzer. Analyze this educational diagram/slide image.\n"
-                    "1. If there is a diagram title or heading (e.g. 'Types of Plans', 'Planning Process', etc.), provide it on the first line as 'HEADING: <title>'.\n"
-                    "2. Transcribe all text, labels, stages, classifications, hierarchies, flowcharts, and relationships accurately and thoroughly.\n"
-                    "3. Make sure all educational concepts shown are captured clearly for students."
+                    "Analyze this embedded educational diagram as supplemental evidence for the "
+                    "PowerPoint topic that contains it. Do not invent facts and do not describe "
+                    "decorative pixels, colors, logos, or unrelated objects.\n"
+                    "Return only:\n"
+                    "HEADING: <diagram heading or NONE>\n"
+                    "TEXT: <all readable words and labels, preserving their wording>\n"
+                    "RELATIONSHIPS: <brief description of arrows, stages, groups, or spatial "
+                    "relationships that are clearly visible, or NONE>\n"
+                    "If the image contains no readable educational information, return "
+                    "HEADING: NONE, TEXT: NONE, RELATIONSHIPS: NONE."
                 )
 
                 response = self.client.models.generate_content(
@@ -121,6 +127,118 @@ class AIService:
 
         return result
 
+    def classify_and_caption_image(self, image_path: str) -> Dict[str, Any]:
+        """
+        Determines whether an image is an authentic visual diagram/chart/schematic,
+        or purely a text slide / bullet-points list.
+        If it contains a diagram, extracts and crops JUST the diagram graphic itself (excluding slide text)
+        and returns:
+            {"is_diagram": bool, "caption": Optional[str], "cropped_filename": Optional[str]}
+        """
+        if not image_path or not os.path.exists(image_path):
+            return {"is_diagram": False, "caption": None, "cropped_filename": None}
+
+        # Persistent disk cache check
+        cache_dir = os.path.dirname(image_path)
+        cache_file = os.path.join(cache_dir, ".diagram_cache.json")
+        fname = os.path.basename(image_path)
+        cached_data = {}
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    cached_data = json.load(f)
+                if fname in cached_data:
+                    entry = cached_data[fname]
+                    # Verify cropped file still exists if marked as diagram
+                    if entry.get("is_diagram") and entry.get("cropped_filename"):
+                        cropped_file = os.path.join(cache_dir, entry["cropped_filename"])
+                        if os.path.exists(cropped_file):
+                            return entry
+                    elif not entry.get("is_diagram"):
+                        return entry
+            except Exception:
+                pass
+
+        res = {"is_diagram": False, "caption": None, "cropped_filename": None}
+        if self.is_available():
+            try:
+                from PIL import Image
+                import io
+                from google import genai
+
+                with Image.open(image_path) as orig_img:
+                    orig_w, orig_h = orig_img.size
+                    img = orig_img
+                    if img.mode in ("RGBA", "P"):
+                        img = img.convert("RGB")
+                    img.thumbnail((768, 768), Image.Resampling.LANCZOS)
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=80)
+                    jpeg_bytes = buf.getvalue()
+
+                prompt = (
+                    "Examine this image extracted from an educational document/presentation.\n"
+                    "Respond in valid JSON with these fields:\n"
+                    '1. "is_diagram": true ONLY IF this image contains an authentic visual diagram, graphic illustration, chart, network topology, circuit, beam pattern, or schematic drawing. false if it is purely a text slide or bullet points list containing sentences, headings, or text with no graphic diagram.\n'
+                    '2. "caption": A concise descriptive label for the diagram (e.g. "Base Station Spot Beams Diagram", "Sectorized Antenna Cells") or null if not a diagram.\n'
+                    '3. "box_2d": If is_diagram is true, provide normalized coordinates [ymin, xmin, ymax, xmax] between 0 and 1000 of JUST the visual diagram/figure graphic itself, excluding the slide title, bullet points, and headers. If false, return null.\n'
+                    "JSON:"
+                )
+
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=[
+                        prompt,
+                        genai.types.Part.from_bytes(data=jpeg_bytes, mime_type="image/jpeg"),
+                    ]
+                )
+                raw = response.text.strip() if response and response.text else ""
+                raw = raw.strip("`").replace("json\n", "").strip()
+                data = json.loads(raw)
+                is_diagram = bool(data.get("is_diagram", False))
+                caption = data.get("caption")
+                box_2d = data.get("box_2d")
+
+                cropped_filename = None
+                if is_diagram and box_2d and len(box_2d) == 4:
+                    try:
+                        ymin, xmin, ymax, xmax = box_2d
+                        left = max(0, int(xmin * orig_w / 1000) - 10)
+                        top = max(0, int(ymin * orig_h / 1000) - 10)
+                        right = min(orig_w, int(xmax * orig_w / 1000) + 10)
+                        bottom = min(orig_h, int(ymax * orig_h / 1000) + 10)
+
+                        if right > left + 20 and bottom > top + 20:
+                            base_name, ext = os.path.splitext(fname)
+                            cropped_filename = f"{base_name}_diagram.png"
+                            cropped_full_path = os.path.join(cache_dir, cropped_filename)
+                            with Image.open(image_path) as full_img:
+                                cropped = full_img.crop((left, top, right, bottom))
+                                cropped.save(cropped_full_path, "PNG")
+                    except Exception as ce:
+                        logger.warning(f"Failed to crop diagram box for {image_path}: {ce}")
+
+                res = {
+                    "is_diagram": is_diagram,
+                    "caption": caption,
+                    "cropped_filename": cropped_filename,
+                }
+            except Exception as e:
+                logger.warning(f"Diagram classification failed for {image_path}: {e}")
+                res = {"is_diagram": True, "caption": "Document Diagram", "cropped_filename": None}
+                return res
+
+        # Save to disk cache only if successfully evaluated
+        if self.is_available():
+            try:
+                cached_data[fname] = res
+                with open(cache_file, "w", encoding="utf-8") as f:
+                    json.dump(cached_data, f)
+            except Exception:
+                pass
+
+        return res
+
     def generate_topic_quiz_fallback(self, topic_name: str, source_text: str, num_questions: int = 5) -> List[Dict[str, Any]]:
         """
         Deterministic, pedagogical, strictly source-grounded quiz generator.
@@ -129,16 +247,41 @@ class AIService:
         without robotic retrieval wording, fill-in-the-blank blanks, or external buzzwords.
         """
         # Split source into clean educational statements / sentences / list items
-        raw_items = [
-            s.strip() for s in re.split(r'(?:\r?\n+|(?<=[.!?])\s+)', source_text)
-            if len(s.strip()) > 15 and not s.strip().startswith("---") and not s.strip().startswith("HEADING:")
-        ]
+        def is_junk_item(s: str) -> bool:
+            l = s.strip().lower()
+            return (
+                not l
+                or l.startswith("---")
+                or l.startswith("heading:")
+                or l.startswith("structure & flow")
+                or l.startswith("key steps")
+                or l.startswith("visual diagram")
+                or l.startswith("table data")
+                or l.startswith("[")
+                or l.endswith("]:")
+                or l.endswith(":")
+                or l == topic_name.strip().lower()
+                or len(l) < 4
+            )
 
+        lines = [line.strip() for line in source_text.splitlines() if line.strip()]
         statements = []
-        for item in raw_items:
-            clean = re.sub(r'[*#_`]', '', item).strip()
-            if len(clean) > 15 and clean not in statements:
-                statements.append(clean)
+        for line in lines:
+            if is_junk_item(line):
+                continue
+            step_match = re.match(r'^(?:Step\s*\d+:?|\d+\.|\bStage\s*\d+:?)\s*(.+)$', line, re.IGNORECASE)
+            if step_match:
+                s_clean = step_match.group(1).strip()
+                if len(s_clean) >= 3 and s_clean not in statements:
+                    statements.append(f"Step: {s_clean}")
+                continue
+
+            # Split regular paragraph text by full sentence boundaries
+            sents = re.split(r'(?<=[a-zA-Z0-9][.!?])\s+(?=[A-Z])', line)
+            for s in sents:
+                clean = re.sub(r'[*#_`]', '', s).strip()
+                if len(clean) >= 15 and not is_junk_item(clean) and clean not in statements:
+                    statements.append(clean)
 
         if not statements:
             statements = [
@@ -152,6 +295,16 @@ class AIService:
         # Extract conceptual entities and subject-predicate structures from source
         parsed_concepts = []
         for stmt in statements:
+            if stmt.startswith("Step: "):
+                step_title = stmt.replace("Step: ", "").strip()
+                parsed_concepts.append({
+                    "concept": step_title,
+                    "relation": "serves as",
+                    "predicate": f"serves as an essential phase in the {topic_name} workflow",
+                    "full_statement": f"{step_title} is an essential phase in {topic_name}.",
+                })
+                continue
+
             # Match common pedagogical patterns: "X is/are/involves/specifies/separates/manages/allows Y"
             match = re.match(r'^([A-Z][a-zA-Z0-9\s\-/]{2,35}?)\s+(is defined as|is an?|are an?|is|are|involves|specifies|separates|manages|allows|enables|consists of|acts as|coordinates)\s+(.+)$', stmt, re.IGNORECASE)
             if match:
@@ -187,11 +340,11 @@ class AIService:
                 "difficulty": "easy",
                 "area": "Core Definitions",
                 "format_q": lambda c, p, t: f"What is meant by {c} in the context of {t}?",
-                "format_ans": lambda c, p, t: f"It {p}." if not p.lower().startswith(("a ", "an ", "the ", "it ")) else p,
+                "format_ans": lambda c, p, t: f"It {p}." if not p.lower().startswith(("a ", "an ", "the ", "it ", "serves ")) else (f"It is {p}." if p.lower().startswith(("a ", "an ", "the ")) else (f"It {p}." if p.lower().startswith("serves ") else f"{p}.")),
                 "distractors": lambda c, p, others, t: [
-                    f"It primarily restricts operational flow rather than {p[:35]}.",
-                    f"It focuses solely on external compliance without {p[:30]}.",
-                    f"It is an informal guideline superseded by automated controls."
+                    f"It primarily acts as an optional post-implementation review rather than a core procedural stage.",
+                    f"It is an informal guideline superseded by automated controls.",
+                    f"It focuses solely on external compliance without guiding internal planning decisions."
                 ],
             },
             # 2. Meaning & Purpose
@@ -200,7 +353,7 @@ class AIService:
                 "difficulty": "easy",
                 "area": "Purpose & Objectives",
                 "format_q": lambda c, p, t: f"What is the primary purpose or role of {c}?",
-                "format_ans": lambda c, p, t: f"To {p}." if not p.lower().startswith(("to ", "it ")) else f"{p}.",
+                "format_ans": lambda c, p, t: (f"To serve as {p[9:].strip()}." if p.lower().startswith("serves as") else (f"To {p}." if not p.lower().startswith(("to ", "it ")) else f"{p}.")),
                 "distractors": lambda c, p, others, t: [
                     f"To separate administrative tasks without direct impact on {c}.",
                     f"To serve as an optional secondary stage with no structural role.",
@@ -226,7 +379,7 @@ class AIService:
                 "difficulty": "medium",
                 "area": "System Relationships",
                 "format_q": lambda c, p, t: f"How does {c} relate to the broader principles of {t}?",
-                "format_ans": lambda c, p, t: f"It establishes the mechanism that {p}." if not p.lower().startswith("it ") else f"{p}.",
+                "format_ans": lambda c, p, t: f"It {p}." if p.lower().startswith("serves ") else (f"It establishes the mechanism that {p}." if not p.lower().startswith("it ") else f"{p}."),
                 "distractors": lambda c, p, others, t: [
                     f"It contradicts the standard methodology of {t}.",
                     f"It functions in isolation, having no direct interaction with other components.",
@@ -239,7 +392,7 @@ class AIService:
                 "difficulty": "medium",
                 "area": "Operational Processes",
                 "format_q": lambda c, p, t: f"During the operation of {c}, how is execution structured?",
-                "format_ans": lambda c, p, t: f"Through processes that {p}." if not p.lower().startswith("through ") else f"{p}.",
+                "format_ans": lambda c, p, t: f"It {p}." if p.lower().startswith("serves ") else (f"Through processes that {p}." if not p.lower().startswith("through ") else f"{p}."),
                 "distractors": lambda c, p, others, t: [
                     f"Through random iteration without predefined procedural steps.",
                     f"By bypassing validation stages to prioritize execution speed.",
@@ -353,7 +506,15 @@ class AIService:
             if other_statements:
                 other_idx = (attempts + len(questions)) % len(other_statements)
                 other_stmt = other_statements[other_idx]
-                distractors.append(other_stmt)
+                if other_stmt.startswith("Step: "):
+                    other_clean = other_stmt.replace("Step: ", "").strip()
+                    distractor_candidate = f"It focuses on {other_clean} rather than {c_name}."
+                elif not any(w in other_stmt.lower().split() for w in ["is", "are", "serves", "acts", "involves", "provides", "defines", "guides", "operates"]):
+                    distractor_candidate = f"It focuses primarily on {other_stmt.strip()}."
+                else:
+                    distractor_candidate = other_stmt
+                if distractor_candidate != correct_ans and distractor_candidate not in distractors:
+                    distractors.append(distractor_candidate)
 
             # 2. Template-based conceptual misunderstanding distractors
             tmpl_distractors = curr_tmpl["distractors"](c_name, c_pred, other_statements, topic_name)
@@ -390,4 +551,3 @@ class AIService:
         return questions[:total_needed]
 
 ai_service = AIService()
-

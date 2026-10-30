@@ -58,6 +58,36 @@ def ensure_schema_compatibility(engine_instance):
             with engine_instance.begin() as conn:
                 if "concept_breakdown" not in cols:
                     conn.execute(text("ALTER TABLE quiz_attempts ADD COLUMN concept_breakdown JSON"))
+
+        if "subjects" in table_names:
+            cols = [col["name"] for col in inspector.get_columns("subjects")]
+            with engine_instance.begin() as conn:
+                if "syllabus_text" not in cols:
+                    conn.execute(text("ALTER TABLE subjects ADD COLUMN syllabus_text TEXT"))
+                if "pyq_data" not in cols:
+                    conn.execute(text("ALTER TABLE subjects ADD COLUMN pyq_data JSON"))
+
+        if "units" in table_names:
+            cols = [col["name"] for col in inspector.get_columns("units")]
+            with engine_instance.begin() as conn:
+                if "syllabus_text" not in cols:
+                    conn.execute(text("ALTER TABLE units ADD COLUMN syllabus_text TEXT"))
+
+        if "topics" in table_names:
+            cols = [col["name"] for col in inspector.get_columns("topics")]
+            with engine_instance.begin() as conn:
+                if "learning_data" not in cols:
+                    conn.execute(text("ALTER TABLE topics ADD COLUMN learning_data JSON"))
+                if "pyq_frequency" not in cols:
+                    conn.execute(text("ALTER TABLE topics ADD COLUMN pyq_frequency INTEGER DEFAULT 0"))
+                if "pyq_notes" not in cols:
+                    conn.execute(text("ALTER TABLE topics ADD COLUMN pyq_notes TEXT"))
+
+        if "documents" in table_names:
+            cols = [col["name"] for col in inspector.get_columns("documents")]
+            with engine_instance.begin() as conn:
+                if "resource_type" not in cols:
+                    conn.execute(text("ALTER TABLE documents ADD COLUMN resource_type VARCHAR(50) DEFAULT 'STUDY_RESOURCE'"))
     except Exception as e:
         logger.warning(f"Schema compatibility check warning: {e}")
 

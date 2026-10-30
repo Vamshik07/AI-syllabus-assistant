@@ -191,6 +191,32 @@ class ProgressService:
             if unit:
                 self._refresh_subject_progress(db, user.id, unit.subject_id)
 
+        elif quiz.quiz_type == "SUBJECT_ASSESSMENT":
+            unit = db.query(Unit).filter(Unit.id == quiz.unit_id).first()
+            if unit:
+                subject_id = unit.subject_id
+                subj_prog = db.query(SubjectProgress).filter(
+                    SubjectProgress.user_id == user.id,
+                    SubjectProgress.subject_id == subject_id
+                ).first()
+                if not subj_prog:
+                    subj_prog = SubjectProgress(
+                        user_id=user.id,
+                        subject_id=subject_id,
+                        total_units=len(unit.subject.units) if unit.subject else 1,
+                        units_completed=0,
+                        completion_percentage=0.0,
+                        status="IN_PROGRESS"
+                    )
+                    db.add(subj_prog)
+
+                if passed and percentage >= 65.0:
+                    subj_prog.completion_percentage = 100.0
+                    subj_prog.status = "COMPLETED"
+                else:
+                    subj_prog.completion_percentage = min(95.0, percentage)
+                    subj_prog.status = "IN_PROGRESS"
+
         db.commit()
 
         return {

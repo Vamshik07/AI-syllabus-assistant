@@ -305,11 +305,21 @@ export default function UnitDetailPage() {
                           )}
                         </div>
 
-                        {topic.subtopics && topic.subtopics.length > 0 && (
-                          <p className="mt-0.5 text-xs text-gray-500">
-                            Includes: {topic.subtopics.map((s) => s.name).join(" • ")}
-                          </p>
-                        )}
+                        {(() => {
+                          const cleanSubs = (topic.subtopics || [])
+                            .map((s) => s.name?.trim())
+                            .filter((name) => {
+                              if (!name || name.length < 3) return false;
+                              if (name.toLowerCase() === topic.name.toLowerCase()) return false;
+                              if (/[_|=~]{2,}/.test(name)) return false;
+                              return /[a-zA-Z]{3,}/.test(name);
+                            });
+                          return cleanSubs.length > 0 ? (
+                            <p className="mt-0.5 text-xs text-gray-500">
+                              Includes: {cleanSubs.join(" • ")}
+                            </p>
+                          ) : null;
+                        })()}
                       </div>
                     </div>
 

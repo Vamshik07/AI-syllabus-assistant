@@ -103,13 +103,18 @@ class StudyPlanService:
             workload = 45
             reasons.append("Foundational syllabus topic with standard source scope.")
 
+        # Check PYQ frequency
+        pyq_freq = getattr(topic, "pyq_frequency", 0) or 0
+        if pyq_freq > 0:
+            reasons.append(f"This topic appeared frequently in the provided previous-year papers ({pyq_freq} occurrences).")
+
         # Determine Transparent Priority Tier
-        if is_weak or workload >= 75 or region_count >= 4 or (is_heavy and not is_completed):
+        if is_weak or pyq_freq > 0 or workload >= 75 or region_count >= 4 or (is_heavy and not is_completed):
             priority = "HIGH"
             priority_tier = "high_weightage"
             rank = 1
-            badge = "🔥 High Study Priority"
-            reasons.append("High study priority: Heavy workload or critical foundational process.")
+            badge = "🔥 High Study Priority" if pyq_freq == 0 else "🔥 High Study Priority (Frequent in PYQs)"
+            reasons.append("High study priority: Heavy workload, PYQ frequency, or critical foundational process.")
             strategy = "Most Important: Master first to secure major exam marks."
         elif is_completed:
             priority = "LOWER"

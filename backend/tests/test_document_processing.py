@@ -128,3 +128,100 @@ def test_docx_processing(client, sample_docx_bytes):
     assert "Operating System Fundamentals" in topics[0]["name"]
     assert len(topics[0]["subtopics"]) >= 1
     assert "Process Management" in topics[0]["subtopics"][0]["name"]
+
+def test_semantic_topic_boundary_and_multi_slide_merging(client):
+    """
+    Test the fundamental Golden Rule:
+    Slides/pages are source units; topics are semantic learning units.
+    Verify:
+    Slides 1-2 Planning
+    Slides 3-4 Characteristics of Planning
+    Slides 5-6 Planning Process
+    Slide 7 Types of Plans
+    -> Exactly 4 topics, NOT 7 topics!
+    """
+    from pptx import Presentation
+
+    prs = Presentation()
+
+    # Slide 1: Planning
+    s1 = prs.slides.add_slide(prs.slide_layouts[1])
+    s1.shapes.title.text = "Planning"
+    s1.placeholders[1].text = "Planning is the foundational management function deciding what to do and how to do it."
+
+    # Slide 2: Planning continuation (e.g. Planning Continued)
+    s2 = prs.slides.add_slide(prs.slide_layouts[1])
+    s2.shapes.title.text = "Planning (Continued)"
+    s2.placeholders[1].text = "Why Planning is Important: It provides direction, reduces uncertainty and minimizes waste."
+
+    # Slide 3: Characteristics of Planning
+    s3 = prs.slides.add_slide(prs.slide_layouts[1])
+    s3.shapes.title.text = "Characteristics of Planning"
+    s3.placeholders[1].text = "Key features include goal orientation, pervasive presence, and futuristic outlook."
+
+    # Slide 4: Characteristics continuation (e.g. Characteristics Part 2)
+    s4 = prs.slides.add_slide(prs.slide_layouts[1])
+    s4.shapes.title.text = "Characteristics of Planning (Part 2)"
+    s4.placeholders[1].text = "Continuous process, decision-making exercise, and a mental exercise requiring imagination."
+
+    # Slide 5: Planning Process
+    s5 = prs.slides.add_slide(prs.slide_layouts[1])
+    s5.shapes.title.text = "Planning Process"
+    s5.placeholders[1].text = "Planning involves a systematic multi-stage workflow from setting goals to follow-up."
+
+    # Slide 6: Steps in Planning Process (Process continuation)
+    s6 = prs.slides.add_slide(prs.slide_layouts[1])
+    s6.shapes.title.text = "Steps in Planning Process"
+    s6.placeholders[1].text = "1. Setting objectives\n2. Developing premises\n3. Identifying alternatives\n4. Evaluating alternatives."
+
+    # Slide 7: Types of Plans (New topic)
+    s7 = prs.slides.add_slide(prs.slide_layouts[1])
+    s7.shapes.title.text = "Types of Plans"
+    s7.placeholders[1].text = "Plans can be classified as single-use plans and standing plans (policies, procedures, rules)."
+
+    buf = io.BytesIO()
+    prs.save(buf)
+    pptx_bytes = buf.getvalue()
+
+    # Create subject and unit
+    s_res = client.post("/api/subjects", json={"name": "Principles of Management"})
+    subj_id = s_res.json()["id"]
+    u_res = client.post(f"/api/subjects/{subj_id}/units", json={"title": "Unit 2: Planning Functions"})
+    unit_id = u_res.json()["id"]
+
+    # Upload the 7-slide PPTX
+    upload_res = client.post(
+        f"/api/units/{unit_id}/document",
+        files={"file": ("planning_lecture.pptx", pptx_bytes, "application/vnd.openxmlformats-officedocument.presentationml.presentation")}
+    )
+    assert upload_res.status_code == 200
+    doc_data = upload_res.json()
+    assert doc_data["slide_count"] == 7
+
+    # Verify extracted topics: Exactly 4 topics, NOT 7!
+    topics_res = client.get(f"/api/units/{unit_id}/topics")
+    assert topics_res.status_code == 200
+    topics = topics_res.json()
+
+    assert len(topics) == 4, f"Expected exactly 4 topics from 7 slides, but got {len(topics)}: {[t['name'] for t in topics]}"
+
+    # Verify Topic 1: Planning (Slides 1-2)
+    assert "planning" in topics[0]["name"].lower()
+    assert topics[0]["source_start"] == "1"
+    assert topics[0]["source_end"] == "2"
+
+    # Verify Topic 2: Characteristics of Planning (Slides 3-4)
+    assert "characteristic" in topics[1]["name"].lower()
+    assert topics[1]["source_start"] == "3"
+    assert topics[1]["source_end"] == "4"
+
+    # Verify Topic 3: Planning Process (Slides 5-6)
+    assert "process" in topics[2]["name"].lower()
+    assert topics[2]["source_start"] == "5"
+    assert topics[2]["source_end"] == "6"
+
+    # Verify Topic 4: Types of Plans (Slide 7)
+    assert "types" in topics[3]["name"].lower()
+    assert topics[3]["source_start"] == "7"
+    assert topics[3]["source_end"] == "7"
+

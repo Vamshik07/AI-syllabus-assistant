@@ -46,6 +46,8 @@ class Subject(Base):
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
+    syllabus_text = Column(Text, nullable=True)
+    pyq_data = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
@@ -62,6 +64,7 @@ class Unit(Base):
     title = Column(String(255), nullable=False)
     order_index = Column(Integer, nullable=False, default=1)
     description = Column(Text, nullable=True)
+    syllabus_text = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
@@ -77,11 +80,12 @@ class Document(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     unit_id = Column(String(36), ForeignKey("units.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     file_name = Column(String(255), nullable=False)
-    file_type = Column(String(10), nullable=False)  # PDF, PPTX, DOCX
+    file_type = Column(String(10), nullable=False)  # PDF, PPTX, DOCX, TXT, IMAGE
     file_size = Column(Integer, nullable=False)  # in bytes
     file_path = Column(String(500), nullable=False)
     page_count = Column(Integer, nullable=True)
     slide_count = Column(Integer, nullable=True)
+    resource_type = Column(String(50), nullable=False, default="STUDY_RESOURCE")  # SYLLABUS, STUDY_RESOURCE, PYQ
     processing_status = Column(String(50), nullable=False, default="UPLOADED")  # UPLOADED, PROCESSING, PROCESSED, FAILED, REVIEW_REQUIRED
     processing_error = Column(Text, nullable=True)
     extracted_text = Column(Text, nullable=True)
@@ -104,6 +108,9 @@ class Topic(Base):
     source_end = Column(String(100), nullable=True)
     confidence = Column(Float, nullable=False, default=1.0)
     status = Column(String(50), nullable=False, default="EXTRACTED")  # EXTRACTED, VERIFIED, REVIEW_REQUIRED
+    learning_data = Column(JSON, nullable=True)  # Structured learning content: definitions, mind map, flowchart, keywords
+    pyq_frequency = Column(Integer, nullable=False, default=0)
+    pyq_notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 

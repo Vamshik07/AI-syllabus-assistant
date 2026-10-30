@@ -1,4 +1,5 @@
 import os
+import re
 import pymupdf as fitz
 import logging
 from typing import Dict, List, Any, Optional
@@ -92,13 +93,50 @@ class PDFService:
                         page_text_pieces.append(block_text)
 
                 elif b_type == 1:  # Image block
+                    img_bytes = block.get("image")
+                    ext = block.get("ext", "png")
+                    img_idx = len([b for b in blocks if b.get("type") == "IMAGE"])
+                    img_filename = f"page_{page_num}_img_{img_idx}.{ext}"
+                    img_path = os.path.join(doc_media_dir, img_filename)
+                    rel_img_path = f"/api/media/{document_id}/{img_filename}"
+                    
+                    if img_bytes and not os.path.exists(img_path):
+                        try:
+                            with open(img_path, "wb") as f:
+                                f.write(img_bytes)
+                        except Exception as e:
+                            logger.warning(f"Failed to save PDF image {img_filename}: {e}")
+
                     blocks.append({
                         "type": "IMAGE",
                         "bbox": bbox,
+                        "media_path": rel_img_path if os.path.exists(img_path) else None,
+                        "filename": img_filename,
+                        "page_number": page_num,
                         "text": "[Image/Diagram]",
+                        "caption": None,
                         "max_font_size": 0,
                         "is_bold": False,
                     })
+
+            # Detect native figure captions on the same page for each IMAGE block
+            for b_i, b in enumerate(blocks):
+                if b.get("type") == "IMAGE":
+                    fig_cap = None
+                    for next_b in blocks[b_i + 1:]:
+                        if next_b.get("type") == "TEXT":
+                            m = re.search(r'(Figure\s+\d+(?:\.\d+)*\s*:[^\n]+)', next_b.get("text", ""), re.IGNORECASE)
+                            if m:
+                                fig_cap = m.group(1).strip()
+                                break
+                    if not fig_cap:
+                        for prev_b in reversed(blocks[:b_i]):
+                            if prev_b.get("type") == "TEXT":
+                                m = re.search(r'(Figure\s+\d+(?:\.\d+)*\s*:[^\n]+)', prev_b.get("text", ""), re.IGNORECASE)
+                                if m:
+                                    fig_cap = m.group(1).strip()
+                                    break
+                    b["caption"] = fig_cap
 
             # Detect native tables if supported
             tables_data = []

@@ -165,9 +165,9 @@ export default function SourceContentViewer({ content }: SourceContentViewerProp
                   <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/75 px-4 py-2.5 text-xs text-gray-600">
                     <div className="flex items-center gap-2">
                       <Layers className="h-4 w-4 text-indigo-600" />
-                      <span className="font-semibold text-gray-800">Original Slide {slideRegion.slide_number}</span>
+                      <span className="font-semibold text-gray-800">{displayTitle || "Study Material Section"}</span>
                     </div>
-                    <span className="text-[11px] font-mono text-gray-400">Authentic Slide Render</span>
+                    <span className="text-[11px] font-mono text-gray-400">Study Source</span>
                   </div>
 
                   <div className="p-6">
@@ -192,7 +192,7 @@ export default function SourceContentViewer({ content }: SourceContentViewerProp
                               /* eslint-disable-next-line @next/next/no-img-element */
                               <img
                                 src={getMediaUrl(subRegion.media_path)}
-                                alt={`Slide ${slideRegion.slide_number} Diagram`}
+                                alt={displayTitle ? `${displayTitle} Diagram` : "Topic Diagram"}
                                 className="max-h-[520px] w-auto max-w-full rounded-xl border border-gray-200 shadow-sm object-contain bg-white"
                               />
                             )}

@@ -137,6 +137,43 @@ class ApiClient {
     });
   }
 
+  async uploadSubjectSyllabus(subjectId: string, data: { syllabus_text?: string; file?: File }): Promise<{ message: string; syllabus_text: string }> {
+    const formData = new FormData();
+    if (data.file) formData.append('file', data.file);
+    if (data.syllabus_text) formData.append('syllabus_text', data.syllabus_text);
+    return this.request<{ message: string; syllabus_text: string }>(`/subjects/${subjectId}/syllabus`, {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async uploadSubjectPYQ(subjectId: string, data: { pyq_text?: string; file?: File }): Promise<any> {
+    const formData = new FormData();
+    if (data.file) formData.append('file', data.file);
+    if (data.pyq_text) formData.append('pyq_text', data.pyq_text);
+    return this.request<any>(`/subjects/${subjectId}/pyq`, {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async generateFinalAssessment(subjectId: string, regenerate: boolean = false): Promise<Quiz> {
+    return this.request<Quiz>(`/subjects/${subjectId}/final-assessment/generate?regenerate=${regenerate}`, {
+      method: 'POST',
+    });
+  }
+
+  async getFinalAssessment(subjectId: string): Promise<Quiz | null> {
+    return this.request<Quiz | null>(`/subjects/${subjectId}/final-assessment`);
+  }
+
+  async submitFinalAssessment(subjectId: string, answers: Record<string, string>): Promise<QuizAttemptResponse> {
+    return this.request<QuizAttemptResponse>(`/subjects/${subjectId}/final-assessment/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ answers }),
+    });
+  }
+
   // Units
   async createUnit(subjectId: string, data: { title: string; order_index?: number; description?: string }): Promise<Unit> {
     return this.request<Unit>(`/subjects/${subjectId}/units`, {
@@ -192,6 +229,11 @@ class ApiClient {
   async getTopicProgress(topicId: string): Promise<TopicProgress> {
     return this.request<TopicProgress>(`/topics/${topicId}/progress`);
   }
+
+  async getTopicLearn(topicId: string): Promise<any> {
+    return this.request<any>(`/topics/${topicId}/learn`);
+  }
+
 
   // Quizzes
   async generateTopicQuiz(topicId: string, regenerate: boolean = false): Promise<Quiz> {

@@ -118,8 +118,18 @@ class PPTXService:
                 for el in elements:
                     if el.get("type") == "TEXT" and el.get("paragraphs"):
                         candidate = el["paragraphs"][0]["text"].strip()
-                        if candidate and len(candidate) <= 60 and not candidate.startswith("---"):
-                            slide_title = candidate
+                        import re
+                        clean_cand = re.sub(r'^[•\-\*~_|=.\s]+|[•\-\*~_|=.\s]+$', '', candidate).strip()
+                        # Reject symbols, OCR noise, equations like _Plan | =, single chars, presenter lines
+                        if (
+                            clean_cand
+                            and 4 <= len(clean_cand) <= 70
+                            and not clean_cand.startswith("---")
+                            and re.search(r'[A-Za-z]{3,}', clean_cand)
+                            and not re.search(r'[_|=~]{2,}', clean_cand)
+                            and not re.match(r'^(?:[•\-\*~_|=.\s\d]+|[a-zA-Z]\b)$', clean_cand)
+                        ):
+                            slide_title = clean_cand
                             break
                 if not slide_title:
                     slide_title = f"Slide {slide_number}"

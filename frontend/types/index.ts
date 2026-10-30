@@ -11,6 +11,8 @@ export interface Subject {
   user_id: string;
   name: string;
   description?: string;
+  syllabus_text?: string;
+  pyq_data?: any;
   created_at: string;
   updated_at: string;
   units?: UnitDetail[];
@@ -61,6 +63,53 @@ export interface Subtopic {
   status: string;
 }
 
+export interface TopicLearningData {
+  summary?: string;
+  source_sections?: Array<{
+    source_reference: string;
+    page_number?: number;
+    slide_number?: number;
+    region_type?: string;
+    text: string;
+  }>;
+  definitions?: Array<{ term: string; definition: string; source_reference?: string; source_ref?: string }>;
+  core_concepts?: Array<{ concept?: string; title?: string; explanation?: string; description?: string; source_reference?: string; source_ref?: string }>;
+  characteristics?: Array<string | { name: string; description?: string; source_reference?: string }>;
+  types_and_classifications?: Array<{ category: string; items?: string[]; description?: string; source_reference?: string }>;
+  classifications?: Array<{ category: string; items?: string[]; description?: string; source_reference?: string }>;
+  processes?: Array<{
+    process_name?: string;
+    name?: string;
+    source_reference?: string;
+    steps: Array<string | { step_number?: number; title?: string; description?: string; source_reference?: string }>;
+  }>;
+  comparisons?: Array<{ aspect: string; item_a: string; item_b: string; source_reference?: string }>;
+  advantages?: Array<string | { point: string; source_reference?: string }>;
+  disadvantages?: Array<string | { point: string; source_reference?: string }>;
+  examples?: Array<string | { example: string; source_reference?: string }>;
+  important_points?: Array<string | { point: string; source_reference?: string }>;
+  keywords?: Array<{ keyword?: string; term?: string; explanation?: string; definition?: string; context?: string; source_reference?: string }>;
+  visuals?: Array<{
+    id?: string;
+    region_id?: string;
+    type: string;
+    caption: string;
+    page_number?: number;
+    slide_number?: number;
+    media_path?: string;
+    content_html?: string;
+    source_reference?: string;
+    ocr_text?: string;
+  }>;
+  practice_cards?: Array<{
+    front: string;
+    back: string;
+    concept?: string;
+    concept_area?: string;
+    source_reference?: string;
+  }>;
+}
+
 export interface Topic {
   id: string;
   document_id: string;
@@ -73,6 +122,9 @@ export interface Topic {
   subtopics: Subtopic[];
   is_unlocked: boolean;
   progress_status?: 'LOCKED' | 'UNLOCKED' | 'IN_PROGRESS' | 'PASSED' | 'COMPLETED';
+  learning_data?: TopicLearningData;
+  pyq_frequency?: number;
+  pyq_notes?: string;
 }
 
 export interface SourceRegion {
@@ -109,6 +161,9 @@ export interface TopicContentView {
   unit_title?: string;
   subject_id?: string;
   subject_name?: string;
+  learning_data?: TopicLearningData;
+  pyq_frequency?: number;
+  pyq_notes?: string;
 }
 
 export interface QuizQuestion {

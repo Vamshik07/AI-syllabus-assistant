@@ -45,7 +45,10 @@ class QuizService:
         # Fetch complete source content strictly belonging to this topic (all slides, pages, visuals)
         source_content = self._get_topic_source_content(db, topic)
         if not source_content.strip():
-            source_content = f"{topic.name}. This topic covers essential concepts in the unit."
+            raise HTTPException(
+                status_code=422,
+                detail="This topic has no extracted source content; a grounded quiz cannot be generated.",
+            )
 
         # Adapt quiz size to topic complexity if not explicitly provided
         if num_questions is None:
@@ -181,11 +184,7 @@ class QuizService:
     ) -> List[Dict[str, Any]]:
         """Generate a balanced final assessment with source coverage per topic."""
         if not topics:
-            return self._generate_questions(
-                f"Unit Master: {unit.title}",
-                f"Unit: {unit.title}. Educational resource material.",
-                num_questions=question_count,
-            )
+            return []
 
         topic_sources = [
             (topic, self._get_topic_source_content(db, topic).strip())
@@ -208,7 +207,7 @@ class QuizService:
 
         for (topic, source), quota in zip(topic_sources, quotas):
             if not source:
-                source = f"{topic.name}. This topic covers essential concepts in the unit."
+                continue
             topic_qs = self._generate_questions(topic.name, source, num_questions=quota)
             for q in topic_qs:
                 if q["question"] not in seen_q_texts:
@@ -231,8 +230,36 @@ class QuizService:
 
         return questions[:question_count]
 
+    def _generate_subject_questions(
+        self, topic_sources: List[Any], question_count: int
+    ) -> List[Dict[str, Any]]:
+        """Generate one balanced assessment from every source-backed subject topic."""
+        available = [(topic, source.strip()) for topic, source in topic_sources if source.strip()]
+        if not available:
+            return []
+
+        quotas = [1] * len(available)
+        remaining = max(0, question_count - len(quotas))
+        while remaining:
+            selected = min(range(len(quotas)), key=lambda idx: quotas[idx])
+            quotas[selected] += 1
+            remaining -= 1
+
+        questions = []
+        seen = set()
+        for (topic, source), quota in zip(available, quotas):
+            for question in self._generate_questions(topic.name, source, num_questions=quota):
+                if question["question"] not in seen:
+                    seen.add(question["question"])
+                    questions.append(question)
+        return questions[:question_count]
+
     def _get_topic_source_content(self, db: Session, topic: Topic) -> str:
         """Collects complete raw text and visual transcription from source regions belonging to this topic."""
+        from app.services.learning_service import is_presenter_or_admin_line, learning_service, format_diagram_content_text
+
+        learning_service._hydrate_topic_image_regions(db, topic)
+
         regions = db.query(SourceRegion).filter(
             SourceRegion.topic_id == topic.id
         ).order_by(SourceRegion.element_order).all()
@@ -240,12 +267,26 @@ class QuizService:
         text_pieces = []
         for r in regions:
             if r.content_text and r.content_text.strip():
-                content = r.content_text.strip()
-                if r.region_type in ("DIAGRAM", "FLOWCHART", "IMAGE"):
-                    content = f"[Visual Structure / Diagram]: {content}"
-                elif r.region_type == "TABLE":
-                    content = f"[Table Data]: {content}"
-                text_pieces.append(content)
+                formatted = format_diagram_content_text(r.content_text)
+                clean_lines = [
+                    l.strip() for l in formatted.splitlines()
+                    if l.strip() and not is_presenter_or_admin_line(l)
+                ]
+                if clean_lines:
+                    content = "\n".join(clean_lines)
+                    if r.region_type in ("DIAGRAM", "FLOWCHART", "IMAGE"):
+                        content = f"Visual Diagram Structure:\n{content}"
+                    elif r.region_type == "TABLE":
+                        content = f"Table Data:\n{content}"
+                    text_pieces.append(content)
+
+        # If text_pieces is still empty, gather from visuals
+        if not text_pieces and topic.learning_data:
+            visuals = topic.learning_data.get("visuals", [])
+            for v in visuals:
+                cap = v.get("caption") or ""
+                if cap:
+                    text_pieces.append(f"[Visual Diagram]:\nTopic: {topic.name}\nDiagram: {cap}")
 
         return "\n\n".join(text_pieces)
 
@@ -322,6 +363,77 @@ class QuizService:
                     logger.warning(f"Discarding invalid fallback question: {errors}")
 
         return questions[:num_questions]
+
+    def generate_subject_assessment(
+        self, db: Session, subject_id: str, question_count: int = 12, regenerate: bool = False
+    ) -> Quiz:
+        """
+        Generates a balanced full-syllabus master assessment across all units and topics in the subject.
+        Uses 65% passing percentage rule for syllabus completion.
+        """
+        from app.models.models import Subject
+        subject = db.query(Subject).filter(Subject.id == subject_id).first()
+        if not subject:
+            raise HTTPException(status_code=404, detail="Subject not found.")
+
+        if not subject.units:
+            raise HTTPException(status_code=400, detail="Subject has no units.")
+
+        first_unit = subject.units[0]
+
+        existing_quiz = db.query(Quiz).filter(
+            Quiz.unit_id == first_unit.id,
+            Quiz.quiz_type == "SUBJECT_ASSESSMENT"
+        ).first()
+
+        if existing_quiz and not regenerate:
+            if existing_quiz.questions and not any(self._is_robotic_question(q.question) for q in existing_quiz.questions):
+                return existing_quiz
+            else:
+                db.delete(existing_quiz)
+                db.commit()
+
+        # Collect topics and source content from all units
+        topic_sources = []
+        for u in subject.units:
+            if u.document:
+                for t in u.document.topics:
+                    src = self._get_topic_source_content(db, t)
+                    topic_sources.append((t, src))
+
+        if not topic_sources:
+            raise HTTPException(status_code=400, detail="No processed topics found across subject units.")
+
+        questions_data = self._generate_subject_questions(topic_sources, question_count=question_count)
+        if not questions_data:
+            raise HTTPException(status_code=422, detail="No source-backed topic content is available for assessment generation.")
+
+        quiz = Quiz(
+            unit_id=first_unit.id,
+            quiz_type="SUBJECT_ASSESSMENT",
+            passing_percentage=65.0,
+        )
+        db.add(quiz)
+        db.flush()
+
+        for idx, q_data in enumerate(questions_data):
+            qq = QuizQuestion(
+                quiz_id=quiz.id,
+                question=q_data["question"],
+                options=q_data["options"],
+                correct_answer=q_data["correct_answer"],
+                source_reference=q_data.get("source_reference", "Subject Full Syllabus"),
+                explanation=q_data.get("explanation"),
+                concept_area=q_data.get("concept_area", "Full Syllabus"),
+                question_type=q_data.get("question_type", "concept_understanding"),
+                difficulty=q_data.get("difficulty", "medium"),
+                order_index=idx + 1,
+            )
+            db.add(qq)
+
+        db.commit()
+        db.refresh(quiz)
+        return quiz
 
 quiz_service = QuizService()
 

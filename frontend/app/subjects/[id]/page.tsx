@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { SubjectDetail, UnitDetail } from "@/types";
+import { SubjectDetail, UnitDetail, Quiz, QuizAttemptResponse } from "@/types";
 import ProgressBar from "@/components/ProgressBar";
+import QuizCard from "@/components/QuizCard";
 import {
   Layers,
   Plus,
@@ -17,6 +18,14 @@ import {
   Lock,
   Pencil,
   Trash2,
+  FileText,
+  Award,
+  Upload,
+  Sparkles,
+  HelpCircle,
+  X,
+  AlertCircle,
+  Trophy,
 } from "lucide-react";
 import { useCatCompanion } from "@/context/CatCompanionContext";
 
@@ -57,18 +66,40 @@ export default function SubjectDetailPage() {
   const [deletingUnit, setDeletingUnit] = useState<UnitDetail | null>(null);
   const [deletingUnitLoading, setDeletingUnitLoading] = useState(false);
 
+  // Syllabus Modal state
+  const [showSyllabusModal, setShowSyllabusModal] = useState(false);
+  const [syllabusTextInput, setSyllabusTextInput] = useState("");
+  const [syllabusFile, setSyllabusFile] = useState<File | null>(null);
+  const [savingSyllabus, setSavingSyllabus] = useState(false);
+
+  // PYQ Modal state
+  const [showPYQModal, setShowPYQModal] = useState(false);
+  const [pyqTextInput, setPyqTextInput] = useState("");
+  const [pyqFile, setPyqFile] = useState<File | null>(null);
+  const [savingPYQ, setSavingPYQ] = useState(false);
+  const [pyqSummary, setPyqSummary] = useState<any | null>(null);
+
+  // Final Assessment state
+  const [showFinalAssessment, setShowFinalAssessment] = useState(false);
+  const [finalQuiz, setFinalQuiz] = useState<Quiz | null>(null);
+  const [finalQuizResult, setFinalQuizResult] = useState<QuizAttemptResponse | null>(null);
+  const [loadingFinalQuiz, setLoadingFinalQuiz] = useState(false);
+
   const loadSubject = async () => {
     try {
       setLoading(true);
       const data = await api.getSubject(subjectId);
       setSubject(data);
+      if (data.syllabus_text) {
+        setSyllabusTextInput(data.syllabus_text);
+      }
       setCompanionContext({
         subjectId: data.id,
         subjectName: data.name,
         pageType: "subjects",
       });
       setCatState("IDLE");
-      triggerSpeechBubble(`Exploring ${data.name}? Ask me anything or let's pick a unit to conquer! 🐱⚔️`, 6000);
+      triggerSpeechBubble(`Exploring ${data.name}? Ask me anything or let's conquer our syllabus! 🐱⚔️`, 6000);
     } catch (err: any) {
       setError(err.message || "Failed to load subject details.");
     } finally {
@@ -166,6 +197,76 @@ export default function SubjectDetailPage() {
     }
   };
 
+  // Syllabus Save
+  const handleSaveSyllabus = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!syllabusTextInput.trim() && !syllabusFile) {
+      alert("Please enter syllabus text or choose a syllabus file.");
+      return;
+    }
+    try {
+      setSavingSyllabus(true);
+      await api.uploadSubjectSyllabus(subjectId, {
+        syllabus_text: syllabusTextInput.trim() || undefined,
+        file: syllabusFile || undefined,
+      });
+      setShowSyllabusModal(false);
+      setSyllabusFile(null);
+      loadSubject();
+    } catch (err: any) {
+      alert(err.message || "Failed to save syllabus.");
+    } finally {
+      setSavingSyllabus(false);
+    }
+  };
+
+  // PYQ Upload
+  const handleUploadPYQ = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pyqTextInput.trim() && !pyqFile) {
+      alert("Please enter past exam questions or upload a question paper.");
+      return;
+    }
+    try {
+      setSavingPYQ(true);
+      const res = await api.uploadSubjectPYQ(subjectId, {
+        pyq_text: pyqTextInput.trim() || undefined,
+        file: pyqFile || undefined,
+      });
+      setPyqSummary(res);
+      setPyqTextInput("");
+      setPyqFile(null);
+      loadSubject();
+    } catch (err: any) {
+      alert(err.message || "Failed to analyze PYQs.");
+    } finally {
+      setSavingPYQ(false);
+    }
+  };
+
+  // Start Final Assessment
+  const handleStartFinalAssessment = async () => {
+    setShowFinalAssessment(true);
+    setLoadingFinalQuiz(true);
+    try {
+      const q = await api.generateFinalAssessment(subjectId);
+      setFinalQuiz(q);
+      if (q) {
+        try {
+          const latest = await api.getLatestQuizAttempt(q.id);
+          setFinalQuizResult(latest || null);
+        } catch {
+          setFinalQuizResult(null);
+        }
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to generate full-syllabus assessment.");
+      setShowFinalAssessment(false);
+    } finally {
+      setLoadingFinalQuiz(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col gap-6 animate-pulse">
@@ -193,6 +294,10 @@ export default function SubjectDetailPage() {
   const completionPct = subject.progress?.completion_percentage || 0;
   const completedUnits = subject.progress?.units_completed || 0;
   const totalUnits = subject.units?.length || 0;
+  const allUnitsCompleted = totalUnits > 0 && completedUnits === totalUnits;
+  const isSubjectMastered = completionPct >= 100;
+  const hasSyllabus = !!subject.syllabus_text;
+  const hasPYQs = !!subject.pyq_data;
 
   return (
     <div className="flex flex-col gap-8">
@@ -207,16 +312,51 @@ export default function SubjectDetailPage() {
         </Link>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900">
-              {subject.name}
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900">
+                {subject.name}
+              </h1>
+              {isSubjectMastered && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-extrabold text-emerald-800 border border-emerald-300">
+                  <Trophy className="h-4 w-4 text-emerald-700" />
+                  100% Mastered
+                </span>
+              )}
+            </div>
             {subject.description && (
               <p className="mt-1 text-xs sm:text-sm text-gray-600 max-w-2xl">
                 {subject.description}
               </p>
             )}
           </div>
+
           <div className="flex flex-wrap items-center gap-2">
+            {/* Syllabus Upload / View Button */}
+            <button
+              onClick={() => setShowSyllabusModal(true)}
+              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-all shadow-sm ${
+                hasSyllabus
+                  ? "border border-purple-200 bg-purple-50 text-purple-800 hover:bg-purple-100"
+                  : "border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+              }`}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span>{hasSyllabus ? "Syllabus Active" : "Upload Syllabus"}</span>
+            </button>
+
+            {/* PYQ Papers Button */}
+            <button
+              onClick={() => setShowPYQModal(true)}
+              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-all shadow-sm ${
+                hasPYQs
+                  ? "border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                  : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              <Award className="h-3.5 w-3.5" />
+              <span>{hasPYQs ? "PYQs Analyzed" : "Upload PYQs"}</span>
+            </button>
+
             <button
               onClick={() => {
                 setEditSubjectName(subject.name);
@@ -226,15 +366,16 @@ export default function SubjectDetailPage() {
               className="flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 shadow-sm"
             >
               <Pencil className="h-3.5 w-3.5" />
-              <span>Edit Subject</span>
+              <span>Edit</span>
             </button>
+
             <button
               onClick={() => setShowDeleteSubject(true)}
               className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 shadow-sm"
             >
               <Trash2 className="h-3.5 w-3.5" />
-              <span>Delete Subject</span>
             </button>
+
             <button
               onClick={() => setShowAddUnit(true)}
               className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700"
@@ -250,7 +391,7 @@ export default function SubjectDetailPage() {
       <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h3 className="font-bold text-gray-900 text-sm">Subject Mastery</h3>
+            <h3 className="font-bold text-gray-900 text-sm">Subject Mastery Progress</h3>
             <p className="text-xs text-gray-500">
               {completedUnits} of {totalUnits} units fully completed (Master Quiz passed)
             </p>
@@ -260,6 +401,77 @@ export default function SubjectDetailPage() {
           </span>
         </div>
         <ProgressBar percentage={completionPct} showLabel={false} size="md" />
+      </div>
+
+      {/* 100% Full-Syllabus Master Assessment Section */}
+      <div
+        className={`rounded-2xl border p-6 shadow-sm transition-all ${
+          isSubjectMastered
+            ? "border-emerald-300 bg-linear-to-r from-emerald-50 to-teal-50"
+            : allUnitsCompleted
+            ? "border-indigo-300 bg-linear-to-r from-indigo-50 to-purple-50"
+            : "border-gray-200 bg-gray-50/70"
+        }`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div
+              className={`rounded-2xl p-3 text-white shadow-sm ${
+                isSubjectMastered
+                  ? "bg-emerald-600"
+                  : allUnitsCompleted
+                  ? "bg-indigo-600"
+                  : "bg-gray-400"
+              }`}
+            >
+              <Trophy className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-gray-900 text-base">
+                  Full-Syllabus Comprehensive Assessment
+                </h3>
+                {isSubjectMastered ? (
+                  <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
+                    Passed (100% Syllabus Mastery Achieved)
+                  </span>
+                ) : allUnitsCompleted ? (
+                  <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-bold text-indigo-800">
+                    Unlocked & Ready
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-gray-200 px-2.5 py-0.5 text-xs font-bold text-gray-600">
+                    Locked
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-gray-600 max-w-xl leading-relaxed">
+                {isSubjectMastered
+                  ? "Congratulations! You completed all units and achieved >= 65% on the comprehensive final exam. Your subject is 100% mastered!"
+                  : allUnitsCompleted
+                  ? "All unit master quizzes are complete! Take the 12-question full-syllabus exam (passing score >= 65%) to achieve 100% course completion."
+                  : `Complete all ${totalUnits} unit master quizzes (${completedUnits}/${totalUnits} completed) to unlock the final comprehensive full-syllabus assessment.`}
+              </p>
+            </div>
+          </div>
+
+          <div>
+            {allUnitsCompleted ? (
+              <button
+                onClick={handleStartFinalAssessment}
+                className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-indigo-700 transition-transform hover:scale-105"
+              >
+                <Sparkles className="h-4 w-4" />
+                <span>{isSubjectMastered ? "Retake Master Exam" : "Take Final Assessment"}</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 bg-white/80 px-3 py-2 rounded-xl border border-gray-200">
+                <Lock className="h-4 w-4" />
+                <span>Pass all units to unlock</span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Units List */}
@@ -354,9 +566,7 @@ export default function SubjectDetailPage() {
                     {totalTopics > 0 && (
                       <div className="w-24 hidden sm:block">
                         <ProgressBar
-                          percentage={
-                            roundPercentage(topicsCompleted, totalTopics)
-                          }
+                          percentage={roundPercentage(topicsCompleted, totalTopics)}
                           size="sm"
                           showLabel={false}
                         />
@@ -401,6 +611,202 @@ export default function SubjectDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Syllabus Modal */}
+      {showSyllabusModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl border border-gray-200">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Official Syllabus Setup</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  The syllabus establishes canonical topic names. Uploaded study resources will map into these topics.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSyllabusModal(false)}
+                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSyllabus} className="flex flex-col gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Upload Syllabus File (PDF, DOCX, TXT)
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.txt,.md"
+                  onChange={(e) => setSyllabusFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                />
+              </div>
+
+              <div className="text-center text-xs text-gray-400 font-semibold">— OR PASTE TEXT —</div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Syllabus Outline / Text
+                </label>
+                <textarea
+                  rows={6}
+                  placeholder="Paste unit syllabus titles and topic names here..."
+                  value={syllabusTextInput}
+                  onChange={(e) => setSyllabusTextInput(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 p-3 text-xs font-mono focus:border-indigo-600 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSyllabusModal(false)}
+                  className="rounded-xl border border-gray-300 px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingSyllabus}
+                  className="rounded-xl bg-indigo-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {savingSyllabus ? "Saving..." : "Save Canonical Syllabus"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PYQ Papers Modal */}
+      {showPYQModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl border border-gray-200">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Upload Past Exam Papers (PYQs)</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  AI extracts questions and matches them against topics to highlight high-probability exam topics.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowPYQModal(false)}
+                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {pyqSummary && (
+              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 mb-4 text-xs text-emerald-900">
+                <div className="font-bold mb-1">PYQ Analysis Completed!</div>
+                <div>Extracted: {pyqSummary.extracted_questions_count} questions</div>
+                <div>Matched to Topics: {pyqSummary.matched_topics_count} topic matches</div>
+              </div>
+            )}
+
+            <form onSubmit={handleUploadPYQ} className="flex flex-col gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Upload Question Paper (PDF, DOCX, TXT)
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.txt,.md"
+                  onChange={(e) => setPyqFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-amber-50 file:text-amber-800 hover:file:bg-amber-100"
+                />
+              </div>
+
+              <div className="text-center text-xs text-gray-400 font-semibold">— OR PASTE QUESTIONS —</div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Exam Questions Text
+                </label>
+                <textarea
+                  rows={5}
+                  placeholder="e.g. 1. What are the key steps in the planning process? (7 Marks)&#10;2. Define characteristics of effective plans..."
+                  value={pyqTextInput}
+                  onChange={(e) => setPyqTextInput(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 p-3 text-xs font-mono focus:border-amber-600 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPYQModal(false)}
+                  className="rounded-xl border border-gray-300 px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingPYQ}
+                  className="rounded-xl bg-amber-600 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {savingPYQ ? "Analyzing Questions..." : "Analyze PYQs"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Full-Syllabus Final Assessment Modal */}
+      {showFinalAssessment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-4xl rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-gray-200 my-8">
+            <div className="flex items-center justify-between border-b border-gray-200 pb-4 mb-6">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-extrabold text-indigo-700">
+                    Full Syllabus Exam
+                  </span>
+                  <span className="text-xs text-gray-500 font-semibold">Passing: &ge; 65%</span>
+                </div>
+                <h2 className="text-xl font-extrabold text-gray-900 mt-1">
+                  {subject.name} — Comprehensive Master Assessment
+                </h2>
+              </div>
+              <button
+                onClick={() => {
+                  setShowFinalAssessment(false);
+                  loadSubject();
+                }}
+                className="rounded-xl p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {loadingFinalQuiz ? (
+              <div className="flex flex-col items-center justify-center p-12 text-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent mb-3" />
+                <p className="font-semibold text-gray-800 text-sm">Synthesizing full-syllabus questions...</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Selecting balanced questions across all {totalUnits} subject units.
+                </p>
+              </div>
+            ) : finalQuiz ? (
+              <QuizCard
+                quiz={finalQuiz}
+                topicTitle={`${subject.name} Comprehensive Assessment`}
+                initialResult={finalQuizResult}
+                onSuccess={(res) => {
+                  setFinalQuizResult(res);
+                  loadSubject();
+                }}
+                onRetry={() => setFinalQuizResult(null)}
+                onFreshQuestions={handleStartFinalAssessment}
+              />
+            ) : null}
+          </div>
+        </div>
+      )}
 
       {/* Add Unit Modal */}
       {showAddUnit && (
